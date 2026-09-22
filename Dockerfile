@@ -17,6 +17,8 @@ ARG FFMPEG_SHA256=9fd092511605bbebafe095ea6d38d9e40f34d12f7386e1258372df8be0576e
 ENV NDK=/opt/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64 \
     PREFIX=/opt/armv7-android \
     HOST=arm-linux-androideabi \
+    CFLAGS=-O3\ -fPIC \
+    CXXFLAGS=-O3\ -fPIC \
     PATH=/opt/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -42,7 +44,7 @@ RUN export CC="$NDK/bin/armv7a-linux-androideabi24-clang" \
 
 COPY tools/alsa-open-probe.c /src/alsa-open-probe.c
 RUN mkdir -p /out \
-    && "$NDK/bin/armv7a-linux-androideabi24-clang" -O2 -fPIE -pie \
+    && "$NDK/bin/armv7a-linux-androideabi24-clang" -O3 -fPIE -pie \
       -I"$PREFIX/include" /src/alsa-open-probe.c -L"$PREFIX/lib" \
       -lasound -ldl -lm -o /out/alsa-open-probe \
     && "$NDK/bin/llvm-readelf" -h /out/alsa-open-probe | grep -q 'Machine:.*ARM' \
@@ -54,11 +56,12 @@ COPY config/echo-alsa.conf /echo-alsa.conf
 
 FROM build AS controls-build
 ENV PATH=/usr/local/cargo/bin:$PATH \
+    CARGO_PROFILE_RELEASE_OPT_LEVEL=3 \
     CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$NDK/bin/armv7a-linux-androideabi24-clang
 COPY libs/echo-controls /src/echo-controls
 WORKDIR /src/echo-controls
 RUN cargo build --locked --release --target armv7-linux-androideabi \
-    && "$NDK/bin/armv7a-linux-androideabi24-clang" -O2 -fPIE -pie \
+    && "$NDK/bin/armv7a-linux-androideabi24-clang" -O3 -fPIE -pie \
       -Iinclude tests/echo_controls_ffi_link.c \
       target/armv7-linux-androideabi/release/libecho_controls.a \
       -ldl -llog -lm -o /tmp/echo-controls-ffi-link \
@@ -92,7 +95,7 @@ ENV CC=$NDK/bin/armv7a-linux-androideabi24-clang \
     AR=$NDK/bin/llvm-ar \
     RANLIB=$NDK/bin/llvm-ranlib \
     STRIP=$NDK/bin/llvm-strip \
-    CFLAGS=-O2\ -fPIC \
+    CFLAGS=-O3\ -fPIC \
     PKG_CONFIG_LIBDIR=/opt/armv7-android/lib/pkgconfig \
     PKG_CONFIG_PATH=/opt/armv7-android/lib/pkgconfig
 RUN mkdir -p /src/popt /src/libconfig /src/libsodium /src/libgpg-error /src/libgcrypt /src/libplist /src/openssl /src/ffmpeg \
@@ -162,6 +165,7 @@ FROM build AS echo-alsa-build
 COPY libs/echo-alsa /src/echo-alsa
 WORKDIR /src/echo-alsa
 ENV PATH=/usr/local/cargo/bin:$PATH \
+    CARGO_PROFILE_RELEASE_OPT_LEVEL=3 \
     CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=/opt/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi24-clang
 RUN cargo build --locked --release --target armv7-linux-androideabi \
     && test -f target/armv7-linux-androideabi/release/libecho_alsa.a
@@ -206,6 +210,7 @@ RUN for patch in /patches/nqptp/*.patch; do patch -p1 < "$patch"; done \
        AR="$NDK/bin/llvm-ar" \
        RANLIB="$NDK/bin/llvm-ranlib" \
        STRIP="$NDK/bin/llvm-strip" \
+       CFLAGS='-O3 -fPIC' \
        ac_cv_func_malloc_0_nonnull=yes \
        ./configure --build=x86_64-pc-linux-gnu --host="$HOST" \
     && make -j"$(nproc)" \
@@ -214,3 +219,10 @@ RUN for patch in /patches/nqptp/*.patch; do patch -p1 < "$patch"; done \
 
 FROM scratch AS nqptp-artifact
 COPY --from=nqptp-build /src/nqptp/nqptp /nqptp
+
+FROM scratch AS twrp-artifact
+COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /payload/system/lib/shairport-echo/shairport-sync
+COPY --from=nqptp-build /src/nqptp/nqptp /payload/system/lib/shairport-echo/nqptp
+COPY --chmod=755 scripts/airplayd.sh /payload/system/bin/airplayd
+COPY config/echo-alsa.conf /payload/system/lib/shairport-echo/echo-alsa.conf
+COPY config/echo-shairport-sync-twrp.conf /payload/system/lib/shairport-echo/echo-shairport-sync.conf

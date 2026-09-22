@@ -1,6 +1,6 @@
-# Build and manual install
+# Build, TWRP, and manual development install
 
-This is the reproducible **development** path for the rooted Echo test devices: Biscuit and Radar. It is not a TWRP installer. A recoverable TWRP ZIP is deliberately deferred.
+This covers the recoverable TWRP ZIP for rooted Biscuit and Radar devices, plus the older manual development path.
 
 The current audio path is validated on Biscuit only. Before using Radar, run a read-only/preflight check and verify its PCM node, ALSA controls, and `ledcontroller` ownership; do not assume they match Biscuit.
 
@@ -22,12 +22,39 @@ docker image inspect android-armv7-r27c-research:latest >/dev/null
 Use the branch/ref containing the desired backend:
 
 ```sh
-git checkout fix/audio-quality # use main after this branch is merged
+git checkout main # or the reviewed release branch
 docker build --pull=false --target shairport-artifact -t shairport-echo-shairport:local .
 docker build --pull=false --target nqptp-artifact -t shairport-echo-nqptp:local .
 ```
 
 `shairport-artifact` builds the Android API-24 ARMv7 Shairport binary and links the separate Rust `libecho_alsa.a` through `echo_alsa.h`. `nqptp-artifact` builds the matching Android NQPTP binary.
+
+## TWRP ZIP
+
+Build the install and uninstall ZIPs from the complete API-24 ARMv7 artifact:
+
+```sh
+./twrp/build.sh
+./tests/twrp_zip.sh
+```
+
+Artifacts are written to `out/` with SHA-256 sidecars. The host-only test validates ZIP layout, checksums, supported-device filtering, fresh install, upgrade, migration from the previous `airplayd` package, uninstall, and preservation of `/data/AIRPLAY_NAME`.
+
+The installer accepts only `biscuit`, `radar`, and `radar_puffin` with `armeabi-v7a`. It preserves the original regular `/system/bin/ledcontroller`, installs `/system/bin/airplayd`, and activates the existing init contract with the relative symlink `ledcontroller -> airplayd`. It never writes boot, recovery, cache, persist, or `/data`; uninstall restores the exact saved `ledcontroller` and retains the AirPlay name.
+
+On first Android boot, `airplayd` creates `/data/AIRPLAY_NAME` from `ro.product.name`. Thereafter that file is authoritative. To change it, edit the file and restart the existing `ledcontroller` service.
+
+Install only from TWRP on an explicitly selected device:
+
+```sh
+serial=G090L91073533XR7 # replace explicitly for Biscuit or Radar
+adb -s "$serial" reboot recovery
+adb -s "$serial" push out/shairport-echo-0.1.0-armv7.zip /tmp/shairport-echo.zip
+adb -s "$serial" shell twrp install /tmp/shairport-echo.zip
+adb -s "$serial" reboot
+```
+
+The ZIP is a device-test artifact until the combined Shairport/NQPTP/Rust distribution-license review is complete.
 
 ## Extract artifacts
 
@@ -145,4 +172,4 @@ Optional test-device cleanup:
 adb -s "$serial" shell "rm -rf '$root'"
 ```
 
-Do not use these commands as a production install path. The future Biscuit/Radar TWRP ZIP must preserve user state, coordinate the device-specific PCM owner, avoid boot/recovery/cache/persist writes, and provide an uninstall path.
+Do not use these commands as a production install path; use the TWRP ZIP above. The manual path remains useful for development A/B work only.
