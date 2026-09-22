@@ -11,6 +11,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+mod ffi;
+
 /// Echo Dot IS31FL3236 sysfs directory. Validate it with `controls-preflight` first.
 pub const DEFAULT_RING_PATH: &str = "/sys/bus/i2c/devices/0-003f";
 pub const RING_SEGMENTS: usize = 12;

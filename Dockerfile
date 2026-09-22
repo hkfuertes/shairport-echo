@@ -52,6 +52,22 @@ FROM scratch AS artifact
 COPY --from=build /out/alsa-open-probe /alsa-open-probe
 COPY config/echo-alsa.conf /echo-alsa.conf
 
+FROM build AS controls-build
+ENV PATH=/usr/local/cargo/bin:$PATH \
+    CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=$NDK/bin/armv7a-linux-androideabi24-clang
+COPY libs/echo-controls /src/echo-controls
+WORKDIR /src/echo-controls
+RUN cargo build --locked --release --target armv7-linux-androideabi \
+    && "$NDK/bin/armv7a-linux-androideabi24-clang" -O2 -fPIE -pie \
+      -Iinclude tests/echo_controls_ffi_link.c \
+      target/armv7-linux-androideabi/release/libecho_controls.a \
+      -ldl -llog -lm -o /tmp/echo-controls-ffi-link \
+    && "$NDK/bin/llvm-readelf" -h /tmp/echo-controls-ffi-link | grep -q 'Machine:.*ARM'
+
+FROM scratch AS controls-artifact
+COPY --from=controls-build /src/echo-controls/target/armv7-linux-androideabi/release/libecho_controls.a /libecho_controls.a
+COPY libs/echo-controls/include/echo_controls.h /include/echo_controls.h
+
 FROM build AS uuid-build
 RUN curl -fsSL "https://www.kernel.org/pub/linux/utils/util-linux/v${UTIL_LINUX_VERSION%.*}/util-linux-${UTIL_LINUX_VERSION}.tar.xz" -o /tmp/util-linux.tar.xz \
     && echo "${UTIL_LINUX_SHA256}  /tmp/util-linux.tar.xz" | sha256sum -c - \
