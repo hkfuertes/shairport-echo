@@ -11,7 +11,8 @@
 - `scripts/nqptp-smoke.sh` passed on the Biscuit: it started NQPTP, observed `/dev/shm/nqptp` and UDP 319/320, then stopped it and removed its temporary `/dev/shm` mount. It never opens PCM.
 - Docker target `uuid-artifact` builds static Android `libuuid` 2.40.4, needed by Shairport's AirPlay identifiers. The input archive is SHA-256 pinned.
 - Docker target `shairport-artifact` builds Shairport Sync 5.5.1 for Android API 24 with AirPlay 2, upstream ALSA, TinySVCmDNS and static third-party dependencies. It needs only Bionic `libc`, `libdl` and `libm` at runtime; the binary executed successfully with `-V` on Biscuit.
-- The active Biscuit control plane runs NQPTP plus Shairport from `/data/local/tmp/shairport-echo`. It owns UDP 319/320 and TCP 7000, creates `/dev/shm/nqptp`, and answers multicast queries for both `_airplay._tcp` and `_raop._tcp` as `Echo Shairport`. No audio stream has been received.
+- The active Biscuit control plane runs NQPTP plus Shairport from `/data/local/tmp/shairport-echo`. It owns UDP 319/320 and TCP 7000, creates `/dev/shm/nqptp`, and answers multicast queries for both `_airplay._tcp` and `_raop._tcp` as `Echo Shairport`. A silent AirPlay 2 stream, song change, switch back to the sender and clean session teardown all passed with the speaker route off.
+- Android lacks pthread cancellation. `0006-cooperatively-cancel-ap2-receivers-on-android.patch` makes the two AP2 `recv` loops check cancellation after `EINTR`; it fixed leaked AP2 threads and a sender hang on song changes. `echo-airplay verbose` starts Shairport with `-vv` for a reproducible diagnostic capture.
 
 ## Target state and safety
 
@@ -37,10 +38,10 @@ The Shairport artifact contains `/shairport-sync`, `/echo-alsa.conf`, `/echo-sha
 
 Next slices:
 
-1. Validate AirPlay 2 pairing and a real sender connection while capturing Shairport/NQPTP logs.
-2. Enable the known-good Echo route only for an attended playback test, then verify actual ALSA format/delay and audible output.
-3. Exercise disconnect/restart behavior; the current Android pthread-cancellation shim requires the launcher's SIGKILL fallback for shutdown.
-4. Validate two-device AirPlay 2 timing/multi-room before claiming it works.
+1. Enable the known-good Echo route only for an attended playback test, then verify actual ALSA format/delay and audible output.
+2. Exercise full-daemon stop/restart behavior; the current Android pthread-cancellation shim still requires the launcher's SIGKILL fallback for shutdown.
+3. Validate two-device AirPlay 2 timing/multi-room before claiming it works.
+4. If testing an advertised HomePod-mini icon, keep it a reversible mDNS/GetInfo metadata override; it must not be represented as HomeKit or native HomePod stereo support.
 5. Package only after license/source-compliance review; do not add controls or LEDs in v1.
 
 ## Constraints

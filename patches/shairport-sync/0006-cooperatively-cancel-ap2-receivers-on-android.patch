@@ -1,0 +1,20 @@
+Make the Android cooperative cancellation shim effective at the AP2 receiver blocking points.
+
+--- a/rtp.c
++++ b/rtp.c
+@@ -1636,6 +1636,7 @@
+ 
+     nread = recvfrom(conn->ap2_control_socket, packet, sizeof(packet), 0,
+                      (struct sockaddr *)&from_sock_addr, &from_sock_addr_length);
++    pthread_testcancel();
+     uint64_t time_now = get_absolute_time_in_ns();
+     int64_t time_since_start = time_now - start_time;
+ 
+@@ -1799,6 +1800,7 @@
+   ssize_t nread;
+   while (1) {
+     nread = recv(conn->realtime_audio_socket, packet, sizeof(packet), 0);
++    pthread_testcancel();
+ 
+     if (nread > 36) { // 36 is the 12-byte header and and 24-byte footer
+       if ((config.diagnostic_drop_packet_fraction == 0.0) ||

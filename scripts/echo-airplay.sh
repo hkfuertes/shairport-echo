@@ -32,7 +32,7 @@ stop_all() {
 }
 
 case ${1:-status} in
-  start)
+  start|verbose)
     [ -x "$root/nqptp" ] && [ -x "$root/shairport-sync" ] || {
       echo "missing nqptp or shairport-sync in $root" >&2
       exit 64
@@ -57,8 +57,13 @@ case ${1:-status} in
       stop_all
       exit 1
     fi
+    if [ "$1" = verbose ]; then
+      set -- -vv
+    else
+      set --
+    fi
     ALSA_CONFIG_PATH="$root/echo-alsa.conf" \
-      setsid "$root/shairport-sync" -c "$root/echo-shairport-sync.conf" >"$root/shairport-sync.log" 2>&1 &
+      setsid "$root/shairport-sync" "$@" -c "$root/echo-shairport-sync.conf" >"$root/shairport-sync.log" 2>&1 &
     echo $! >"$shairport_pid"
     sleep 2
     if ! alive "$shairport_pid"; then
@@ -77,7 +82,7 @@ case ${1:-status} in
     alive "$shairport_pid" && echo "shairport-sync $(cat "$shairport_pid")" || echo "shairport-sync stopped"
     ;;
   *)
-    echo "usage: $0 {start|stop|status}" >&2
+    echo "usage: $0 {start|verbose|stop|status}" >&2
     exit 64
     ;;
 esac
