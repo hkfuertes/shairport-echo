@@ -41,7 +41,7 @@ Install only from TWRP on an explicitly selected supported device. Full prerequi
 
 - [Shairport Sync](https://github.com/mikebrady/shairport-sync) by Mike Brady and contributors provides the AirPlay receiver implementation.
 - [NQPTP](https://github.com/mikebrady/nqptp) by Mike Brady and contributors provides the PTP timing service.
-- [EchoLocal](https://github.com/ygelfand/echolocal) provided valuable reference and inspiration for working with the Echo Dot platform and recovery-based deployment.
+- [EchoLocal](https://github.com/ygelfand/echolocal) is the upstream source from which this repository's Echo hardware crates were derived; it also informed recovery-based deployment.
 
 ## AI-assisted development
 
