@@ -177,6 +177,20 @@ impl EchoAlsaDevice {
         Ok(())
     }
 
+    fn volume_db(&self) -> io::Result<f64> {
+        Ok(f64::from(current_volume_db(self.mixer.volume()?)))
+    }
+
+    fn adjust_volume_db(&mut self, steps: c_int) -> io::Result<f64> {
+        let current = self.mixer.volume()?;
+        let target = stepped_volume_db(current, steps);
+        self.volume_db = target;
+        if !self.muted {
+            self.mixer.set_db(target)?;
+        }
+        self.volume_db()
+    }
+
     fn apply_volume(&mut self) -> io::Result<()> {
         self.mixer
             .set_db(if self.muted { -144.0 } else { self.volume_db })
@@ -190,6 +204,12 @@ fn current_volume_db(volume: MasterVolume) -> f32 {
         .zip(volume.enabled)
         .filter_map(|(db, enabled)| enabled.then_some(db))
         .fold(-144.0, f32::max)
+}
+
+fn stepped_volume_db(volume: MasterVolume, steps: c_int) -> f32 {
+    let current = current_volume_db(volume).clamp(-30.0, 0.0);
+    let next = (current + steps.clamp(-30, 30) as f32).clamp(-30.0, 0.0);
+    if next <= -30.0 { -144.0 } else { next }
 }
 
 fn monotonic_time_ns() -> io::Result<u64> {
@@ -399,6 +419,34 @@ pub extern "C" fn echo_alsa_set_mute(handle: *mut EchoAlsaHandle, muted: c_int) 
     with_device(handle, |device| device.set_mute(muted != 0))
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn echo_alsa_get_volume_db(handle: *mut EchoAlsaHandle, out: *mut f64) -> c_int {
+    if out.is_null() {
+        return -libc::EINVAL;
+    }
+    with_device(handle, |device| {
+        // SAFETY: out was checked for null and belongs to the C caller.
+        unsafe { *out = device.volume_db()? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn echo_alsa_adjust_volume_db(
+    handle: *mut EchoAlsaHandle,
+    steps: c_int,
+    out: *mut f64,
+) -> c_int {
+    if out.is_null() {
+        return -libc::EINVAL;
+    }
+    with_device(handle, |device| {
+        // SAFETY: out was checked for null and belongs to the C caller.
+        unsafe { *out = device.adjust_volume_db(steps)? };
+        Ok(())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -431,5 +479,25 @@ mod tests {
     #[test]
     fn status_is_a_negative_errno() {
         assert_eq!(error_status(&invalid_argument()), -libc::EINVAL);
+    }
+
+    #[test]
+    fn volume_steps_read_the_mixer_and_mute_at_the_bottom() {
+        let volume = MasterVolume {
+            gain_db: [-20.5, -20.0],
+            enabled: [true, true],
+        };
+        assert_eq!(stepped_volume_db(volume, 1), -19.0);
+        assert_eq!(stepped_volume_db(volume, -20), -144.0);
+        assert_eq!(
+            stepped_volume_db(
+                MasterVolume {
+                    gain_db: [0.0, 0.0],
+                    enabled: [false, false],
+                },
+                1,
+            ),
+            -29.0
+        );
     }
 }
