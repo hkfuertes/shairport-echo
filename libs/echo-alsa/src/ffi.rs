@@ -212,6 +212,10 @@ fn stepped_volume_db(volume: MasterVolume, steps: c_int) -> f32 {
     if next <= -30.0 { -144.0 } else { next }
 }
 
+fn read_system_volume_db() -> io::Result<f64> {
+    Ok(f64::from(current_volume_db(Mixer::open()?.volume()?)))
+}
+
 fn monotonic_time_ns() -> io::Result<u64> {
     let mut timestamp = MaybeUninit::<libc::timespec>::zeroed();
     // SAFETY: timestamp points to writable storage for a timespec.
@@ -427,6 +431,18 @@ pub extern "C" fn echo_alsa_get_volume_db(handle: *mut EchoAlsaHandle, out: *mut
     with_device(handle, |device| {
         // SAFETY: out was checked for null and belongs to the C caller.
         unsafe { *out = device.volume_db()? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn echo_alsa_read_system_volume_db(out: *mut f64) -> c_int {
+    if out.is_null() {
+        return -libc::EINVAL;
+    }
+    ffi_status(|| {
+        // SAFETY: out was checked for null and belongs to the C caller.
+        unsafe { *out = read_system_volume_db()? };
         Ok(())
     })
 }
