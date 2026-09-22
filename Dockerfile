@@ -10,7 +10,7 @@ ENV NDK=/opt/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64 \
     PATH=/opt/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      autoconf automake bzip2 ca-certificates curl libtool make pkg-config \
+      autoconf automake bzip2 ca-certificates curl libtool make patch pkg-config \
     && rm -rf /var/lib/apt/lists/*
 
 RUN curl -fsSL "https://www.alsa-project.org/files/pub/lib/alsa-lib-${ALSA_VERSION}.tar.bz2" -o /tmp/alsa.tar.bz2 \
@@ -41,3 +41,22 @@ RUN mkdir -p /out \
 FROM scratch AS artifact
 COPY --from=build /out/alsa-open-probe /alsa-open-probe
 COPY config/echo-alsa.conf /echo-alsa.conf
+
+FROM build AS nqptp-build
+COPY third_party/nqptp /src/nqptp
+COPY patches/nqptp /patches/nqptp
+WORKDIR /src/nqptp
+RUN for patch in /patches/nqptp/*.patch; do patch -p1 < "$patch"; done \
+    && autoreconf -fi \
+    && CC="$NDK/bin/armv7a-linux-androideabi24-clang" \
+       AR="$NDK/bin/llvm-ar" \
+       RANLIB="$NDK/bin/llvm-ranlib" \
+       STRIP="$NDK/bin/llvm-strip" \
+       ac_cv_func_malloc_0_nonnull=yes \
+       ./configure --build=x86_64-pc-linux-gnu --host="$HOST" \
+    && make -j"$(nproc)" \
+    && "$NDK/bin/llvm-readelf" -h nqptp | grep -q 'Machine:.*ARM' \
+    && "$NDK/bin/llvm-readelf" -d nqptp | grep -q 'Shared library: \[libc.so\]'
+
+FROM scratch AS nqptp-artifact
+COPY --from=nqptp-build /src/nqptp/nqptp /nqptp

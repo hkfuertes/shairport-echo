@@ -5,6 +5,7 @@ Android ARMv7 port of Shairport Sync for the Echo Dot Biscuit.
 - `third_party/shairport-sync` and `third_party/nqptp` are pristine pinned upstream snapshots.
 - Shairport will use its upstream ALSA backend with `config/echo-alsa.conf`, which maps `echo` to PCM card 0, device 23.
 - `Dockerfile` builds a reproducible Android API 24 `alsa-open-probe` against static upstream `alsa-lib` 1.2.14. The probe opens, configures and closes PCM without writing frames.
+- Docker target `nqptp-artifact` builds NQPTP for Android API 24 using external Bionic compatibility patches; it uses `/dev/shm` for the NQPTP–Shairport shared-memory interface.
 - `libs/echo-alsa` remains an independent Rust hardware library and fallback; it is not in the first Shairport audio path.
 - `libs/echo-controls` is reserved for v2.
 
