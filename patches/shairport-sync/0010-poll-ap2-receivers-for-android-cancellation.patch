@@ -1,0 +1,31 @@
+diff --git a/rtp.c b/rtp.c
+index c2779ae..ca08d2f 100644
+--- a/rtp.c
++++ b/rtp.c
+@@ -41,0 +42 @@
++#include <poll.h>
+@@ -1620,0 +1622,14 @@ int32_t decipher_player_put_packet(uint8_t *ciphered_audio_alt, ssize_t nread,
++#ifdef __ANDROID__
++// Bionic has no pthread cancellation. Do not let a cooperative cancellation
++// request wait indefinitely for a silent AP2 socket to receive another packet.
++static int android_wait_for_ap2_packet(int socket_fd) {
++  struct pollfd poll_fd = {.fd = socket_fd, .events = POLLIN, .revents = 0};
++  int rc;
++  do {
++    rc = poll(&poll_fd, 1, 250);
++  } while ((rc < 0) && (errno == EINTR));
++  pthread_testcancel();
++  return rc > 0;
++}
++#endif
++
+@@ -1636,0 +1652,4 @@ void *rtp_ap2_control_receiver(void *arg) {
++#ifdef __ANDROID__
++    if (!android_wait_for_ap2_packet(conn->ap2_control_socket))
++      continue;
++#endif
+@@ -1801,0 +1821,4 @@ void *rtp_realtime_audio_receiver(void *arg) {
++#ifdef __ANDROID__
++    if (!android_wait_for_ap2_packet(conn->realtime_audio_socket))
++      continue;
++#endif

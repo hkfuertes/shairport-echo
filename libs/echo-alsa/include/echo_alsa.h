@@ -37,6 +37,12 @@ int echo_alsa_delay_frames(echo_alsa_t *handle, int32_t *out);
 /* A negative return may still provide stats after an output discontinuity. */
 int echo_alsa_stats(echo_alsa_t *handle, echo_alsa_stats_t *out);
 int echo_alsa_set_volume_db(echo_alsa_t *handle, double volume_db);
+/* Reads the current system mixer level; muted hardware reports -144 dB. */
+int echo_alsa_get_volume_db(echo_alsa_t *handle, double *out);
+/* Reads only the system mixer; it does not open PCM or change routing/amplification. */
+int echo_alsa_read_system_volume_db(double *out);
+/* Adjusts the system mixer in 1 dB steps within -30..0 dB; the bottom step mutes. */
+int echo_alsa_adjust_volume_db(echo_alsa_t *handle, int steps, double *out);
 int echo_alsa_set_mute(echo_alsa_t *handle, int muted);
 
 #ifdef __cplusplus

@@ -1,0 +1,101 @@
+diff --git a/echo_controls_bridge.c b/echo_controls_bridge.c
+index 9150731..ce6e51c 100644
+--- a/echo_controls_bridge.c
++++ b/echo_controls_bridge.c
+@@ -4 +3,0 @@
+-#include "echo_controls_volume_curve.h"
+@@ -26,0 +26,2 @@
++#define ECHO_CONTROLS_VOLUME_MIN_DB -30.0
++#define ECHO_CONTROLS_VOLUME_MAX_DB 0.0
+@@ -75,2 +76,5 @@ static ssize_t send_source_volume(rtsp_conn_info *conn, double db) {
+-  return ap2_event_send_unit_volume_notification(
+-      conn, echo_controls_standard_30db_unit_from_db(db));
++  double unit_volume = (db <= ECHO_CONTROLS_VOLUME_MIN_DB)
++                           ? 0.0
++                           : (db - ECHO_CONTROLS_VOLUME_MIN_DB) /
++                                 (ECHO_CONTROLS_VOLUME_MAX_DB - ECHO_CONTROLS_VOLUME_MIN_DB);
++  return ap2_event_send_unit_volume_notification(conn, unit_volume);
+@@ -183,2 +187,5 @@ static void show_volume(double db) {
+-  size_t lit = (size_t)ceil(echo_controls_standard_30db_unit_from_db(db) *
+-                            ECHO_CONTROLS_RING_SEGMENTS);
++  double fraction = (db <= ECHO_CONTROLS_VOLUME_MIN_DB)
++                        ? 0.0
++                        : (db - ECHO_CONTROLS_VOLUME_MIN_DB) /
++                              (ECHO_CONTROLS_VOLUME_MAX_DB - ECHO_CONTROLS_VOLUME_MIN_DB);
++  size_t lit = (size_t)round(fraction * ECHO_CONTROLS_RING_SEGMENTS);
+diff --git a/echo_controls_volume_curve.h b/echo_controls_volume_curve.h
+deleted file mode 100644
+index 6979f8c..0000000
+--- a/echo_controls_volume_curve.h
++++ /dev/null
+@@ -1,48 +0,0 @@
+-#ifndef ECHO_CONTROLS_VOLUME_CURVE_H
+-#define ECHO_CONTROLS_VOLUME_CURVE_H
+-
+-/*
+- * Inverse of Shairport's standard vol2attn() profile for the Echo's fixed
+- * 30 dB hardware range. It keeps LEDs and reverse AP2 volume in the same
+- * coordinate system as the iPhone slider while ALSA remains authoritative.
+- */
+-static inline double echo_controls_standard_30db_from_unit(double unit) {
+-  if (unit <= 0.0)
+-    return -30.0;
+-  if (unit >= 1.0)
+-    return 0.0;
+-
+-  double volume = unit * 30.0 - 30.0;
+-  const double lines[3][2] = {{0.0, -15.0}, {-5.0, -22.5}, {-17.0, -30.0}};
+-  double db = 0.0;
+-  for (unsigned int index = 0; index < 3; index++) {
+-    if (volume <= lines[index][0]) {
+-      double candidate = lines[index][1] * (volume - lines[index][0]) /
+-                         (-30.0 - lines[index][0]);
+-      if (candidate < db)
+-        db = candidate;
+-    }
+-  }
+-  return db;
+-}
+-
+-static inline double echo_controls_standard_30db_unit_from_db(double db) {
+-  if (db <= -30.0)
+-    return 0.0;
+-  if (db >= 0.0)
+-    return 1.0;
+-
+-  double low = 0.0;
+-  double high = 1.0;
+-  // 16 bisections are much finer than the codec's 0.5 dB mixer steps.
+-  for (unsigned int index = 0; index < 16; index++) {
+-    double middle = (low + high) / 2.0;
+-    if (echo_controls_standard_30db_from_unit(middle) < db)
+-      low = middle;
+-    else
+-      high = middle;
+-  }
+-  return (low + high) / 2.0;
+-}
+-
+-#endif
+diff --git a/tests/echo_controls_volume_curve_test.c b/tests/echo_controls_volume_curve_test.c
+deleted file mode 100644
+index 80a0d69..0000000
+--- a/tests/echo_controls_volume_curve_test.c
++++ /dev/null
+@@ -1,16 +0,0 @@
+-#include "../echo_controls_volume_curve.h"
+-
+-#include <assert.h>
+-#include <math.h>
+-
+-int main(void) {
+-  const double units[] = {0.0, 0.25, 0.5, 0.75, 1.0};
+-  for (unsigned int index = 0; index < sizeof(units) / sizeof(units[0]); index++) {
+-    double unit = units[index];
+-    double db = echo_controls_standard_30db_from_unit(unit);
+-    assert(fabs(echo_controls_standard_30db_unit_from_db(db) - unit) < 0.0001);
+-  }
+-  assert(echo_controls_standard_30db_unit_from_db(-144.0) == 0.0);
+-  assert(echo_controls_standard_30db_unit_from_db(6.0) == 1.0);
+-  return 0;
+-}
