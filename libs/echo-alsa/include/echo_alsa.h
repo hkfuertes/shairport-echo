@@ -41,8 +41,10 @@ int echo_alsa_set_volume_db(echo_alsa_t *handle, double volume_db);
 int echo_alsa_get_volume_db(echo_alsa_t *handle, double *out);
 /* Reads only the system mixer; it does not open PCM or change routing/amplification. */
 int echo_alsa_read_system_volume_db(double *out);
-/* Adjusts the system mixer in 1 dB steps within -30..0 dB; the bottom step mutes. */
+/* Adjusts this handle's mixer in 1 dB steps within -30..0 dB; the bottom step mutes. */
 int echo_alsa_adjust_volume_db(echo_alsa_t *handle, int steps, double *out);
+/* Adjusts only the system mixer in 1 dB steps; it does not open PCM or change routing/amplification. */
+int echo_alsa_adjust_system_volume_db(int steps, double *out);
 int echo_alsa_set_mute(echo_alsa_t *handle, int muted);
 
 #ifdef __cplusplus
