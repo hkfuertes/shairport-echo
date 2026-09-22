@@ -1,0 +1,13 @@
+[package]
+name = "shairplay-echo-controls"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+description = "Raw Echo LED-ring and button controls"
+
+[dependencies]
+libc = "0.2"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
