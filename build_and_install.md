@@ -34,9 +34,11 @@ docker build --pull=false --target nqptp-artifact -t shairport-echo-nqptp:local 
 Build the install and uninstall ZIPs from the complete API-24 ARMv7 artifact:
 
 ```sh
-./twrp/build.sh
-./tests/twrp_zip.sh
+make          # build the complete ARMv7 artifact and both ZIPs
+make test     # host-only ZIP/install/upgrade/uninstall regression
 ```
+
+`make zip` builds only; `VERSION=0.1.1 make` selects a different ZIP version.
 
 Artifacts are written to `out/` with SHA-256 sidecars. The host-only test validates ZIP layout, checksums, supported-device filtering, fresh install, upgrade, migration from the previous `airplayd` package, uninstall, and preservation of `/data/AIRPLAY_NAME`.
 
