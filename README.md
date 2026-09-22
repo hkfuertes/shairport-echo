@@ -6,6 +6,7 @@ Android ARMv7 port of Shairport Sync for the Echo Dot Biscuit.
 - Shairport will use its upstream ALSA backend with `config/echo-alsa.conf`, which maps `echo` to PCM card 0, device 23.
 - `Dockerfile` builds a reproducible Android API 24 `alsa-open-probe` against static upstream `alsa-lib` 1.2.14. The probe opens, configures and closes PCM without writing frames.
 - Docker target `nqptp-artifact` builds NQPTP for Android API 24 using external Bionic compatibility patches; it uses `/dev/shm` for the NQPTP–Shairport shared-memory interface. `scripts/nqptp-smoke.sh` validates that interface and the PTP ports without opening PCM.
+- Docker target `uuid-artifact` builds the static Android `libuuid` required for AirPlay device identifiers.
 - `libs/echo-alsa` remains an independent Rust hardware library and fallback; it is not in the first Shairport audio path.
 - `libs/echo-controls` is reserved for v2.
 

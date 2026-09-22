@@ -9,6 +9,7 @@
 - The silent probe was built and ran on the attached Biscuit. With `ALSA_CONFIG_PATH` set to `config/echo-alsa.conf`, it opened and configured `echo` as S16_LE, 48,000 Hz, 2 channels, 1,024-frame periods and a 4,096-frame buffer, then closed without writing a frame.
 - Docker target `nqptp-artifact` now builds an Android ARMv7 NQPTP binary. Its external patches replace Linux-only `-lpthread`/`-lrt` checks, provide the API-24 shared-memory compatibility layer using `/dev/shm`, avoid unsupported pthread cancellation and avoid `MAP_LOCKED` on Bionic.
 - `scripts/nqptp-smoke.sh` passed on the Biscuit: it started NQPTP, observed `/dev/shm/nqptp` and UDP 319/320, then stopped it and removed its temporary `/dev/shm` mount. It never opens PCM.
+- Docker target `uuid-artifact` builds static Android `libuuid` 2.40.4, needed by Shairport's AirPlay identifiers. The input archive is SHA-256 pinned.
 
 ## Target state and safety
 
