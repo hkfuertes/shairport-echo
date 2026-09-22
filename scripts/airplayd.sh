@@ -5,6 +5,8 @@ set -eu
 root=${SHAIRPORT_ECHO_ROOT:-/system/lib/shairport-echo}
 name_file=${AIRPLAY_NAME_PATH:-/data/AIRPLAY_NAME}
 state_dir=${SHAIRPORT_ECHO_STATE_DIR:-/data/shairport-echo}
+# ponytail: Biscuit and Radar use this vendor endpoint; use echo-controls if that changes.
+ring_path=${ECHO_RING_PATH:-/sys/bus/i2c/devices/0-003f}
 getprop_cmd=${GETPROP:-/system/bin/getprop}
 ip_cmd=${IP:-ip}
 mount_cmd=${MOUNT:-mount}
@@ -34,6 +36,13 @@ read_name() {
   printf '%s\n' "$name"
 }
 
+turn_ring_off() {
+  [ -e "$ring_path/boot_animation" ] &&
+    printf '0\n' >"$ring_path/boot_animation" 2>/dev/null || true
+  [ -e "$ring_path/frame" ] &&
+    printf '%072d\n' 0 >"$ring_path/frame" 2>/dev/null || true
+}
+
 stop_child() {
   pid=${1:-}
   [ -n "$pid" ] || return 0
@@ -58,6 +67,7 @@ trap cleanup EXIT
 trap 'exit 0' HUP INT TERM
 
 name=$(read_name)
+turn_ring_off
 if [ "${AIRPLAYD_DRY_RUN:-0}" = 1 ]; then
   printf 'name=%s\n' "$name"
   exit 0

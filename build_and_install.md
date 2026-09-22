@@ -42,7 +42,7 @@ Artifacts are written to `out/` with SHA-256 sidecars. The host-only test valida
 
 The installer accepts only `biscuit`, `radar`, and `radar_puffin` with `armeabi-v7a`. It preserves the original regular `/system/bin/ledcontroller`, installs `/system/bin/airplayd`, and activates the existing init contract with the relative symlink `ledcontroller -> airplayd`. It never writes boot, recovery, cache, persist, or `/data`; uninstall restores the exact saved `ledcontroller` and retains the AirPlay name.
 
-On first Android boot, `airplayd` creates `/data/AIRPLAY_NAME` from `ro.product.name`. Thereafter that file is authoritative. To change it, edit the file and restart the existing `ledcontroller` service.
+On first Android boot, `airplayd` turns off the inherited LED boot animation, then creates `/data/AIRPLAY_NAME` from `ro.product.name`. Thereafter that file is authoritative. To change it, edit the file and restart the existing `ledcontroller` service.
 
 Install only from TWRP on an explicitly selected device:
 
