@@ -32,7 +32,7 @@ stop_all() {
 }
 
 case ${1:-status} in
-  start|verbose|nosync)
+  start|verbose|nosync|crate)
     [ -x "$root/nqptp" ] && [ -x "$root/shairport-sync" ] || {
       echo "missing nqptp or shairport-sync in $root" >&2
       exit 64
@@ -64,6 +64,10 @@ case ${1:-status} in
         config=$root/echo-shairport-sync-nosync.conf
         set -- -vv
         ;;
+      crate)
+        config=$root/echo-shairport-sync-echo.conf
+        set -- -vv
+        ;;
       *) set -- ;;
     esac
     ALSA_CONFIG_PATH="$root/echo-alsa.conf" \
@@ -86,7 +90,7 @@ case ${1:-status} in
     alive "$shairport_pid" && echo "shairport-sync $(cat "$shairport_pid")" || echo "shairport-sync stopped"
     ;;
   *)
-    echo "usage: $0 {start|verbose|nosync|stop|status}" >&2
+    echo "usage: $0 {start|verbose|nosync|crate|stop|status}" >&2
     exit 64
     ;;
 esac

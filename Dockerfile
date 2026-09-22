@@ -142,7 +142,17 @@ RUN cd /src/ffmpeg \
     && sed -i 's/ -landroid -lmediandk//g' "$PREFIX/lib/pkgconfig/libavutil.pc" \
     && test -f "$PREFIX/lib/libavcodec.a"
 
+FROM build AS echo-alsa-build
+COPY libs/echo-alsa /src/echo-alsa
+WORKDIR /src/echo-alsa
+ENV PATH=/usr/local/cargo/bin:$PATH \
+    CARGO_TARGET_ARMV7_LINUX_ANDROIDEABI_LINKER=/opt/android-ndk-r27c/toolchains/llvm/prebuilt/linux-x86_64/bin/armv7a-linux-androideabi24-clang
+RUN cargo build --locked --release --target armv7-linux-androideabi \
+    && test -f target/armv7-linux-androideabi/release/libecho_alsa.a
+
 FROM shairport-deps AS shairport-build
+COPY --from=echo-alsa-build /src/echo-alsa/target/armv7-linux-androideabi/release/libecho_alsa.a /opt/armv7-android/lib/libecho_alsa.a
+COPY libs/echo-alsa/include/echo_alsa.h /opt/armv7-android/include/echo_alsa.h
 COPY third_party/shairport-sync /src/shairport-sync
 COPY patches/shairport-sync /patches/shairport-sync
 WORKDIR /src/shairport-sync
@@ -152,9 +162,9 @@ RUN for patch in /patches/shairport-sync/*.patch; do patch -p1 < "$patch"; done 
     && PKG_CONFIG='pkg-config --static' \
        CPPFLAGS="-I$PREFIX/include" \
        LDFLAGS="-L$PREFIX/lib -fPIE -pie -static-libstdc++" \
-       LIBS='-ldl -lm' \
+       LIBS='-llog -ldl -lm' \
        ../configure --build=x86_64-pc-linux-gnu --host="$HOST" \
-         --with-airplay-2 --with-alsa --with-tinysvcmdns --with-ssl=openssl \
+         --with-airplay-2 --with-alsa --with-echo-alsa --with-tinysvcmdns --with-ssl=openssl \
     && make -j"$(nproc)" \
     && "$NDK/bin/llvm-readelf" -h shairport-sync | grep -q 'Machine:.*ARM' \
     && "$NDK/bin/llvm-readelf" -d shairport-sync | grep -q 'Shared library: \[libc.so\]'
@@ -164,6 +174,7 @@ COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /shairport-
 COPY config/echo-alsa.conf /echo-alsa.conf
 COPY config/echo-shairport-sync.conf /echo-shairport-sync.conf
 COPY config/echo-shairport-sync-nosync.conf /echo-shairport-sync-nosync.conf
+COPY config/echo-shairport-sync-echo.conf /echo-shairport-sync-echo.conf
 COPY scripts/echo-airplay.sh /echo-airplay
 COPY scripts/echo-route.sh /echo-route
 
