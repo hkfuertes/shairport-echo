@@ -11,13 +11,11 @@ LED-ring and physical-input support for ARMv7 Echo Dot Minimal Base devices runn
 
 ## Shairport port status
 
-This crate moved with the hardware layer for ownership consistency. It is **not** part of the first Shairport audio backend.
+This crate stays separate from Shairport Sync, but the `audio_echo` controls bridge links its static archive.
 
 It also builds `libecho_controls.a` and ships `include/echo_controls.h`. The C ABI uses caller-owned opaque handles, returns negative errno values, writes no LED state on ring open/close, and supports blocking or `-EAGAIN` nonblocking button reads. It deliberately supplies hardware access only: a companion C program owns button/LED policy and must not create a second volume state.
 
-Integrate controls only after AP1/AP2 audio output is stable, and keep volume ownership with the selected system output path rather than creating a second gain state.
-
-See [`../../PORTING_HANDOFF.md`](../../PORTING_HANDOFF.md).
+The bridge owns button/LED policy and must keep volume ownership with the selected system output path rather than creating a second gain state.
 
 ## Target safety
 

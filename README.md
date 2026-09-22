@@ -44,5 +44,3 @@ Install only from TWRP on an explicitly selected supported device. Full prerequi
 - [`libs/echo-alsa/`](libs/echo-alsa): reusable Echo ALSA C ABI.
 - [`libs/echo-controls/`](libs/echo-controls): reusable Echo controls C ABI.
 - [`twrp/`](twrp/): reversible installer and package build tooling.
-
-For implementation history and lower-level porting notes, see [PORTING_HANDOFF.md](PORTING_HANDOFF.md).

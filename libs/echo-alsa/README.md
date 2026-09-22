@@ -28,10 +28,8 @@ Shairport types. Compile the header contract with:
 tests/check-ffi-header.sh
 ```
 
-A future Shairport `audio_output` backend will link this archive directly. Preserve real ALSA
-delay/flush behavior: an extra blind queue would undermine AP2 timing and multi-room synchronization.
-
-See [`../../PORTING_HANDOFF.md`](../../PORTING_HANDOFF.md).
+Shairport's `audio_echo` backend links this archive directly. Preserve real ALSA delay/flush
+behavior: an extra blind queue would undermine AP2 timing and multi-room synchronization.
 
 ## Target safety
 
