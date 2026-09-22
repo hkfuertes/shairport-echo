@@ -40,10 +40,10 @@ index c1d2734..0d33052 100644
  #endif
 diff --git a/audio_echo.c b/audio_echo.c
 new file mode 100644
-index 0000000..13bed2d
+index 0000000..011d586
 --- /dev/null
 +++ b/audio_echo.c
-@@ -0,0 +1,318 @@
+@@ -0,0 +1,319 @@
 +/*
 + * Echo raw-ALSA audio backend. This file is part of Shairport Sync.
 + *
@@ -320,6 +320,7 @@ index 0000000..13bed2d
 +  pthread_mutex_lock(&echo_mutex);
 +  echo_volume = vol;
 +  echo_volume_set = 1;
++  debug(2, "echo: setting hardware volume to %.2f dB", echo_volume / 100.0);
 +  if (echo_device != NULL) {
 +    int rc = echo_alsa_set_volume_db(echo_device, echo_volume / 100.0);
 +    if (rc != 0)
