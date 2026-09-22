@@ -1,5 +1,13 @@
 # Handoff: Shairport Sync on Echo Biscuit
 
+## Current audio A/B (`fix/audio-quality`)
+
+- Commit `6baa539` adds the optional `echo` Shairport backend, linked to the separate `libecho_alsa.a` through `echo_alsa.h`; default `alsa` remains available.
+- The first direct arbitrary-frame bridge failed audibly with `EPIPE`. The current bridge accumulates 1,024-frame periods, retries the same period after an XRUN, and includes its pending frames in Shairport delay/statistics accounting.
+- An attended Biscuit test validated clean audible playback and iPhone AirPlay volume changes. The log recorded no `EPIPE`/period-write failures and hardware volume requests from -17.10 dB through 0 dB.
+- `echo-airplay crate` selects `echo-shairport-sync-echo.conf`, which limits hardware volume to 30 dB so normal AirPlay slider positions remain audible.
+- Physical Echo volume/buttons to iPhone are not implemented. The earlier report that audio continued after the sender app was killed also needs a dedicated teardown test; do not claim it is fixed.
+
 ## Current state
 
 - Repository: `/home/hkfuertes/projects/shairport-echo`, branch `main`, private origin `https://github.com/hkfuertes/shairport-echo.git`.
