@@ -163,6 +163,7 @@ FROM scratch AS shairport-artifact
 COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /shairport-sync
 COPY config/echo-alsa.conf /echo-alsa.conf
 COPY config/echo-shairport-sync.conf /echo-shairport-sync.conf
+COPY config/echo-shairport-sync-nosync.conf /echo-shairport-sync-nosync.conf
 COPY scripts/echo-airplay.sh /echo-airplay
 COPY scripts/echo-route.sh /echo-route
 
