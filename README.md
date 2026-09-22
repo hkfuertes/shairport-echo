@@ -37,6 +37,16 @@ Install only from TWRP on an explicitly selected supported device. Full prerequi
 - Do not claim native HomePod-style stereo-pair support. Validate sender behavior and two-device timing before claiming multi-room support.
 - The installer never writes boot, recovery, cache, or persist, and preserves `/data/AIRPLAY_NAME` on upgrades and uninstall.
 
+## Credits
+
+- [Shairport Sync](https://github.com/mikebrady/shairport-sync) by Mike Brady and contributors provides the AirPlay receiver implementation.
+- [NQPTP](https://github.com/mikebrady/nqptp) by Mike Brady and contributors provides the PTP timing service.
+- [EchoLocal](https://github.com/ygelfand/echolocal) provided valuable reference and inspiration for working with the Echo Dot platform and recovery-based deployment.
+
+## AI-assisted development
+
+This project was developed with substantial assistance from AI coding agents. Maintainers remain responsible for review, hardware safety, security, licensing, and release decisions.
+
 ## Repository layout
 
 - [`third_party/`](third_party/README.md): pristine, checksum-pinned upstream snapshots.
