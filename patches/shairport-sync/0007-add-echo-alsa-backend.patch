@@ -40,10 +40,10 @@ index c1d2734..0d33052 100644
  #endif
 diff --git a/audio_echo.c b/audio_echo.c
 new file mode 100644
-index 0000000..f277e75
+index 0000000..13bed2d
 --- /dev/null
 +++ b/audio_echo.c
-@@ -0,0 +1,284 @@
+@@ -0,0 +1,318 @@
 +/*
 + * Echo raw-ALSA audio backend. This file is part of Shairport Sync.
 + *
@@ -61,13 +61,18 @@ index 0000000..f277e75
 +#include <pthread.h>
 +#include <stdint.h>
 +#include <stdio.h>
++#include <string.h>
 +
++#define ECHO_PERIOD_FRAMES 1024U
++#define ECHO_CHANNELS 2U
 +#define ECHO_ENCODED_FORMAT                                                                    \
-+  (CHANNELS_TO_ENCODED_FORMAT(2) | RATE_TO_ENCODED_FORMAT(48000) |                            \
++  (CHANNELS_TO_ENCODED_FORMAT(ECHO_CHANNELS) | RATE_TO_ENCODED_FORMAT(48000) |                \
 +   FORMAT_TO_ENCODED_FORMAT(SPS_FORMAT_S16_LE))
 +
 +static pthread_mutex_t echo_mutex = PTHREAD_MUTEX_INITIALIZER;
 +static echo_alsa_t *echo_device = NULL;
++static int16_t echo_period[ECHO_PERIOD_FRAMES * ECHO_CHANNELS];
++static uint32_t echo_pending_frames = 0;
 +static int echo_discontinuity = 1;
 +static int echo_volume_set = 0;
 +static double echo_volume = -6350.0;
@@ -79,6 +84,7 @@ index 0000000..f277e75
 +
 +static int close_device(void) {
 +  int rc = 0;
++  echo_pending_frames = 0;
 +  if (echo_device != NULL) {
 +    rc = echo_alsa_close(echo_device);
 +    echo_device = NULL;
@@ -124,8 +130,9 @@ index 0000000..f277e75
 +  }
 +
 +  echo_device = device;
++  echo_pending_frames = 0;
 +  echo_discontinuity = 1;
-+  debug(2, "echo: opened raw Echo ALSA output");
++  debug(2, "echo: opened periodised Echo ALSA output");
 +  return 0;
 +}
 +
@@ -173,6 +180,30 @@ index 0000000..f277e75
 +  (void)sample_format;
 +}
 +
++static int write_pending_period(void) {
++  uint32_t frames_written = 0;
++  int rc = echo_alsa_write_s16le(echo_device, echo_period, ECHO_PERIOD_FRAMES, &frames_written);
++  if (rc == -EPIPE) {
++    echo_discontinuity = 1;
++    debug(1, "echo: underrun; recovering and retrying the same period");
++    rc = echo_alsa_flush(echo_device);
++    if (rc == 0)
++      rc = echo_alsa_start(echo_device);
++    if (rc == 0) {
++      frames_written = 0;
++      rc = echo_alsa_write_s16le(echo_device, echo_period, ECHO_PERIOD_FRAMES, &frames_written);
++    }
++  }
++  if ((rc == 0) && (frames_written != ECHO_PERIOD_FRAMES))
++    rc = -EIO;
++  if (rc != 0) {
++    echo_discontinuity = 1;
++    debug(1, "echo: period write failed: %d after %u of %u frames", rc, frames_written,
++          ECHO_PERIOD_FRAMES);
++  }
++  return rc;
++}
++
 +static int play(void *buf, int samples, int sample_type, uint32_t timestamp, uint64_t playtime) {
 +  (void)sample_type;
 +  (void)timestamp;
@@ -182,29 +213,29 @@ index 0000000..f277e75
 +  if (samples == 0)
 +    return 0;
 +
++  const int16_t *input = buf;
++  uint32_t remaining = (uint32_t)samples;
 +  pthread_mutex_lock(&echo_mutex);
 +  int rc = 0;
 +  if (echo_device == NULL)
 +    rc = open_device();
 +
-+  if (rc == 0) {
-+    uint32_t frames_written = 0;
-+    rc = echo_alsa_write_s16le(echo_device, buf, (uint32_t)samples, &frames_written);
-+    if ((rc == 0) && (frames_written != (uint32_t)samples))
-+      rc = -EIO;
-+    if (rc != 0) {
-+      echo_discontinuity = 1;
-+      debug(1, "echo: write failed: %d after %u of %d frames", rc, frames_written, samples);
-+      if (rc == -EPIPE) {
-+        int recovery = echo_alsa_flush(echo_device);
-+        if (recovery == 0)
-+          recovery = echo_alsa_start(echo_device);
-+        if (recovery == 0)
-+          rc = 0; // The uncertain block is deliberately dropped, as in audio_alsa.
-+        else
-+          rc = recovery;
-+      }
++  while ((rc == 0) && ((remaining != 0) || (echo_pending_frames == ECHO_PERIOD_FRAMES))) {
++    if (echo_pending_frames == ECHO_PERIOD_FRAMES) {
++      rc = write_pending_period();
++      if (rc == 0)
++        echo_pending_frames = 0;
++      continue;
 +    }
++
++    uint32_t copied_frames = ECHO_PERIOD_FRAMES - echo_pending_frames;
++    if (copied_frames > remaining)
++      copied_frames = remaining;
++    memcpy(&echo_period[echo_pending_frames * ECHO_CHANNELS], input,
++           copied_frames * ECHO_CHANNELS * sizeof(*input));
++    echo_pending_frames += copied_frames;
++    input += copied_frames * ECHO_CHANNELS;
++    remaining -= copied_frames;
 +  }
 +  pthread_mutex_unlock(&echo_mutex);
 +  return rc;
@@ -220,6 +251,7 @@ index 0000000..f277e75
 +
 +static void flush(void) {
 +  pthread_mutex_lock(&echo_mutex);
++  echo_pending_frames = 0;
 +  if (echo_device != NULL) {
 +    int rc = echo_alsa_flush(echo_device);
 +    echo_discontinuity = 1;
@@ -231,17 +263,19 @@ index 0000000..f277e75
 +
 +static int delay(long *the_delay) {
 +  int32_t frames = 0;
++  uint32_t pending_frames = 0;
 +  int rc = -ENODEV;
 +  if (the_delay != NULL)
 +    *the_delay = 0;
 +
 +  pthread_mutex_lock(&echo_mutex);
++  pending_frames = echo_pending_frames;
 +  if (echo_device != NULL)
 +    rc = echo_alsa_delay_frames(echo_device, &frames);
 +  pthread_mutex_unlock(&echo_mutex);
 +
 +  if ((rc == 0) && (frames >= 0) && (the_delay != NULL))
-+    *the_delay = frames;
++    *the_delay = (long)frames + pending_frames;
 +  else if ((rc == 0) && (frames < 0))
 +    rc = -EIO;
 +  return rc;
@@ -264,13 +298,13 @@ index 0000000..f277e75
 +  if (echo_device != NULL) {
 +    rc = echo_alsa_stats(echo_device, &measurements);
 +    if (raw_measurement_time != NULL)
-+      *raw_measurement_time = measurements.raw_measurement_time_ns;
++      *raw_measurement_time = get_absolute_time_in_ns();
 +    if (corrected_measurement_time != NULL)
-+      *corrected_measurement_time = measurements.corrected_measurement_time_ns;
++      *corrected_measurement_time = get_monotonic_time_in_ns();
 +    if ((the_delay != NULL) && (measurements.delay_frames >= 0))
-+      *the_delay = (uint64_t)measurements.delay_frames;
++      *the_delay = (uint64_t)measurements.delay_frames + echo_pending_frames;
 +    if (frames_sent_to_dac != NULL)
-+      *frames_sent_to_dac = measurements.frames_sent_to_dac;
++      *frames_sent_to_dac = measurements.frames_sent_to_dac + echo_pending_frames;
 +    if (rc != 0)
 +      echo_discontinuity = 1;
 +    else if (echo_discontinuity) {
