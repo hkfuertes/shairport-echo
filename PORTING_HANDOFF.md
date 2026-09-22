@@ -8,6 +8,7 @@
 - `Dockerfile` builds `alsa-open-probe`: an ARMv7 Android API 24 PIE linked to Bionic and static upstream ALSA 1.2.14. ALSA's unsupported SysV-SHM components are excluded using upstream configure options and `ac_cv_header_sys_shm_h=no`.
 - The silent probe was built and ran on the attached Biscuit. With `ALSA_CONFIG_PATH` set to `config/echo-alsa.conf`, it opened and configured `echo` as S16_LE, 48,000 Hz, 2 channels, 1,024-frame periods and a 4,096-frame buffer, then closed without writing a frame.
 - Docker target `nqptp-artifact` now builds an Android ARMv7 NQPTP binary. Its external patches replace Linux-only `-lpthread`/`-lrt` checks, provide the API-24 shared-memory compatibility layer using `/dev/shm`, avoid unsupported pthread cancellation and avoid `MAP_LOCKED` on Bionic.
+- `scripts/nqptp-smoke.sh` passed on the Biscuit: it started NQPTP, observed `/dev/shm/nqptp` and UDP 319/320, then stopped it and removed its temporary `/dev/shm` mount. It never opens PCM.
 
 ## Target state and safety
 
