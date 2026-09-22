@@ -33,7 +33,7 @@ docker build --target shairport-artifact -t shairport-echo-shairport:local .
 docker build --target nqptp-artifact -t shairport-echo-nqptp:local .
 ```
 
-The Shairport artifact contains `/shairport-sync`, `/echo-alsa.conf`, `/echo-shairport-sync.conf` and `/echo-airplay`.
+The Shairport artifact contains `/shairport-sync`, `/echo-alsa.conf`, `/echo-shairport-sync.conf`, `/echo-airplay` and `/echo-route`. `echo-route on` is intentionally untested and must only be run for an attended playback test; it is already deployed but not invoked on Biscuit.
 
 Next slices:
 

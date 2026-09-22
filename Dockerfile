@@ -164,6 +164,7 @@ COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /shairport-
 COPY config/echo-alsa.conf /echo-alsa.conf
 COPY config/echo-shairport-sync.conf /echo-shairport-sync.conf
 COPY scripts/echo-airplay.sh /echo-airplay
+COPY scripts/echo-route.sh /echo-route
 
 FROM build AS nqptp-build
 COPY third_party/nqptp /src/nqptp
