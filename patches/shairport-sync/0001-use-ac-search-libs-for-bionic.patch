@@ -1,0 +1,22 @@
+Android Bionic exports pthread and clock_gettime from libc and provides neither libpthread nor librt.
+
+--- a/configure.ac
++++ b/configure.ac
+@@ -47,7 +47,7 @@
+ 
+ # Checks for libraries.
+ if test "x${with_os}" = xlinux -o "x${with_os}" = xfreebsd ; then
+- AC_CHECK_LIB([rt],[clock_gettime], , AC_MSG_ERROR(librt needed))
++ AC_SEARCH_LIBS([clock_gettime], [rt], , AC_MSG_ERROR(librt needed))
+ fi
+ 
+ if test "x${with_os}" = xopenbsd ; then
+@@ -69,7 +69,7 @@
+ ##### The following check for the pthreads library doesn't put the compiler into the correct pthread mode
+ ##### so we add the -pthread compilation flag in AMFLAGS in the Makefile.am as well.
+ 
+-AC_CHECK_LIB([pthread],[pthread_create], , AC_MSG_ERROR(pthread library needed))
++AC_SEARCH_LIBS([pthread_create], [pthread], , AC_MSG_ERROR(pthread library needed))
+ AC_CHECK_LIB([m],[exp], , AC_MSG_ERROR(maths library needed))
+ 
+ if  test "x${with_pkg_config}" = xyes ; then

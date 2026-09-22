@@ -10,13 +10,15 @@
 - Docker target `nqptp-artifact` now builds an Android ARMv7 NQPTP binary. Its external patches replace Linux-only `-lpthread`/`-lrt` checks, provide the API-24 shared-memory compatibility layer using `/dev/shm`, avoid unsupported pthread cancellation and avoid `MAP_LOCKED` on Bionic.
 - `scripts/nqptp-smoke.sh` passed on the Biscuit: it started NQPTP, observed `/dev/shm/nqptp` and UDP 319/320, then stopped it and removed its temporary `/dev/shm` mount. It never opens PCM.
 - Docker target `uuid-artifact` builds static Android `libuuid` 2.40.4, needed by Shairport's AirPlay identifiers. The input archive is SHA-256 pinned.
+- Docker target `shairport-artifact` builds Shairport Sync 5.5.1 for Android API 24 with AirPlay 2, upstream ALSA, TinySVCmDNS and static third-party dependencies. It needs only Bionic `libc`, `libdl` and `libm` at runtime; the binary executed successfully with `-V` on Biscuit.
+- The active Biscuit control plane runs NQPTP plus Shairport from `/data/local/tmp/shairport-echo`. It owns UDP 319/320 and TCP 7000, creates `/dev/shm/nqptp`, and answers multicast queries for both `_airplay._tcp` and `_raop._tcp` as `Echo Shairport`. No audio stream has been received.
 
 ## Target state and safety
 
 - Target: rooted Echo Dot Minimal Base (`biscuit`), Android 7.1.2/API 25, ARMv7, permissive SELinux.
-- The physical speaker amplifier was confirmed `Off` before and after the probe. Do not enable it or write PCM until the user explicitly permits audio.
-- `/system/bin/ledcontroller` (currently a symlink to `airplayd`) owns `pcmC0D23p` normally. It is an init-supervised service. The silent probe used `ctl.stop ledcontroller`, opened PCM, then restored it with `ctl.start ledcontroller`; afterwards the service again owned PCM and the amplifier remained off.
-- Future Shairport startup must deliberately coordinate that service, rather than racing it for the exclusive PCM device.
+- The physical speaker amplifier is currently confirmed `Off`; audio is intentionally deferred until the user validates it in person.
+- `/system/bin/ledcontroller` (currently a symlink to `airplayd`) owns `pcmC0D23p` normally and also conflicted with the vendor mDNS announcement. It is currently stopped through init so Shairport is the only advertised receiver; restore it with `setprop ctl.start ledcontroller` if the Shairport control plane is stopped or abandoned.
+- Future production startup must deliberately coordinate that service, rather than racing it for the exclusive PCM device.
 
 ## Architecture decision
 
@@ -27,23 +29,23 @@ Do not add `audio_echo.c` or link the Rust static library into the first receive
 ## Build and validation
 
 ```sh
-docker build --target artifact -t shairport-echo-alsa-probe:local .
+docker build --target shairport-artifact -t shairport-echo-shairport:local .
+docker build --target nqptp-artifact -t shairport-echo-nqptp:local .
 ```
 
-The image contains `/alsa-open-probe` and `/echo-alsa.conf`. The probe never calls `snd_pcm_prepare`, `snd_pcm_start`, or a write operation.
+The Shairport artifact contains `/shairport-sync`, `/echo-alsa.conf`, `/echo-shairport-sync.conf` and `/echo-airplay`.
 
 Next slices:
 
-1. Extend the Android Docker build with Shairport Sync's AirPlay 2 dependencies, keeping all source versions and checksums pinned.
-2. Build Shairport with `--with-airplay-2 --with-alsa --with-tinysvcmdns` and the upstream ALSA backend.
-3. Run NQPTP silently on target with a temporary `/dev/shm` mount, then validate its control/shared-memory interface.
-4. Perform a silent Shairport execution/configuration test while `ledcontroller` is safely coordinated.
-5. Validate discovery and AirPlay 2 control-plane behaviour before enabling any speaker route or audio playback.
-6. Package only after license/source-compliance review; do not add controls or LEDs in v1.
+1. Validate AirPlay 2 pairing and a real sender connection while capturing Shairport/NQPTP logs.
+2. Enable the known-good Echo route only for an attended playback test, then verify actual ALSA format/delay and audible output.
+3. Exercise disconnect/restart behavior; the current Android pthread-cancellation shim requires the launcher's SIGKILL fallback for shutdown.
+4. Validate two-device AirPlay 2 timing/multi-room before claiming it works.
+5. Package only after license/source-compliance review; do not add controls or LEDs in v1.
 
 ## Constraints
 
 - Do not edit vendored upstream trees in place.
 - Target binaries must be Android ARMv7/API 24-compatible; do not run them on the x86 host.
-- No noise: no PCM writes, no route enable, no amplifier enable without fresh user permission.
+- Do not enable the speaker route or amplifier until an attended playback test; the user has granted device authority but asked to validate audible output in person.
 - NQPTP is GPL-licensed; review distribution obligations before a release ZIP.

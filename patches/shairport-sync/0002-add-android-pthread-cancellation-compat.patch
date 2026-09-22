@@ -1,0 +1,90 @@
+Android API 24 omits pthread cancellation. Use a SIGUSR1-driven cooperative cancellation shim and no-op scheduling/cancellation-state hints.
+
+--- a/utilities/debug.h
++++ b/utilities/debug.h
+@@ -27,6 +27,24 @@
+ 
+ #include <stddef.h>
+ 
++#ifdef __ANDROID__
++#include <pthread.h>
++int shairport_pthread_cancel(pthread_t thread);
++void shairport_pthread_testcancel(void);
++int shairport_pthread_setcancelstate(int state, int *old_state);
++int shairport_pthread_attr_setinheritsched(pthread_attr_t *attr, int inherit);
++#ifndef PTHREAD_CANCEL_DISABLE
++#define PTHREAD_CANCEL_DISABLE 1
++#endif
++#ifndef PTHREAD_EXPLICIT_SCHED
++#define PTHREAD_EXPLICIT_SCHED 1
++#endif
++#define pthread_cancel shairport_pthread_cancel
++#define pthread_testcancel shairport_pthread_testcancel
++#define pthread_setcancelstate shairport_pthread_setcancelstate
++#define pthread_attr_setinheritsched shairport_pthread_attr_setinheritsched
++#endif
++
+ #ifdef __cplusplus
+ #define EXTERNC extern "C"
+ #else
+--- a/common.c
++++ b/common.c
+@@ -41,6 +41,7 @@
+ #include <math.h>
+ #include <memory.h>
+ #include <poll.h>
++#include <signal.h>
+ #include <popt.h>
+ #include <stdarg.h>
+ #include <stdio.h>
+@@ -74,6 +75,50 @@
+ #include <netinet/in.h>
+ #endif
+ 
++#ifdef __ANDROID__
++static pthread_once_t android_cancel_once = PTHREAD_ONCE_INIT;
++static __thread volatile sig_atomic_t android_cancel_requested;
++
++static void android_cancel_handler(int signal_number) {
++  (void)signal_number;
++  android_cancel_requested = 1;
++}
++
++static void android_cancel_init(void) {
++  struct sigaction action;
++  memset(&action, 0, sizeof(action));
++  action.sa_handler = android_cancel_handler;
++  sigemptyset(&action.sa_mask);
++  sigaction(SIGUSR1, &action, NULL);
++}
++
++int shairport_pthread_cancel(pthread_t thread) {
++  // ponytail: cooperative SIGUSR1 cancellation; use native Bionic cancellation if it becomes available.
++  int rc = pthread_once(&android_cancel_once, android_cancel_init);
++  if (rc)
++    return rc;
++  return pthread_kill(thread, SIGUSR1);
++}
++
++void shairport_pthread_testcancel(void) {
++  if (android_cancel_requested)
++    pthread_exit(NULL);
++}
++
++int shairport_pthread_setcancelstate(int state, int *old_state) {
++  (void)state;
++  if (old_state)
++    *old_state = 0;
++  return 0;
++}
++
++int shairport_pthread_attr_setinheritsched(pthread_attr_t *attr, int inherit) {
++  (void)attr;
++  (void)inherit;
++  return 0;
++}
++#endif
++
+ #ifdef CONFIG_CONVOLUTION
+ #include <ctype.h>
+ #include <sndfile.h>
