@@ -1,4 +1,4 @@
-use shairplay_echo_alsa::preflight;
+use echo_alsa::preflight;
 
 fn main() {
     match preflight() {

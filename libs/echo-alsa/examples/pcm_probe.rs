@@ -1,7 +1,7 @@
 //! Hardware regression: paced callbacks with 8 ms delivery jitter, without AirPlay.
 //! Silent by default. `--tone` emits a short, low-level 750 Hz tone.
+use echo_alsa::{CHANNELS, EchoAlsaSink, PERIOD_FRAMES, SAMPLE_RATE};
 use shairplay::{AudioCodec, AudioFormat, AudioHandler};
-use shairplay_echo_alsa::{CHANNELS, EchoAlsaSink, PERIOD_FRAMES, SAMPLE_RATE};
 use std::{
     error::Error,
     process::Command,

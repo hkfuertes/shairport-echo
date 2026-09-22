@@ -1,4 +1,4 @@
-use shairplay_echo_controls::{RING_SEGMENTS, Rgb, Ring};
+use echo_controls::{RING_SEGMENTS, Rgb, Ring};
 use std::{error::Error, fs, io, thread, time::Duration};
 
 fn main() -> Result<(), Box<dyn Error>> {

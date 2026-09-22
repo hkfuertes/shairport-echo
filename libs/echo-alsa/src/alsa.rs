@@ -97,6 +97,7 @@ const fn ioc(direction: u32, kind: u8, number: u8, size: usize) -> u32 {
 const PCM_IOCTL_HW_PARAMS: u32 = ioc(IOC_READ | IOC_WRITE, b'A', 0x11, HW_PARAMS_SIZE);
 const PCM_IOCTL_SW_PARAMS: u32 = ioc(IOC_READ | IOC_WRITE, b'A', 0x13, SW_PARAMS_SIZE);
 const PCM_IOCTL_PREPARE: u32 = ioc(0, b'A', 0x40, 0);
+const PCM_IOCTL_DELAY: u32 = ioc(IOC_READ, b'A', 0x21, size_of::<i32>());
 const PCM_IOCTL_DROP: u32 = ioc(0, b'A', 0x43, 0);
 const PCM_IOCTL_WRITEI_FRAMES: u32 = ioc(IOC_WRITE, b'A', 0x50, XFERI_SIZE);
 const CTL_IOCTL_ELEM_LIST: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x10, ELEM_LIST_SIZE);
@@ -105,10 +106,7 @@ const CTL_IOCTL_ELEM_READ: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x12, ELEM_VALU
 const CTL_IOCTL_ELEM_WRITE: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x13, ELEM_VALUE_SIZE);
 const CTL_IOCTL_TLV_READ: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x1a, 8);
 
-#[cfg(target_os = "android")]
-type IoctlRequest = libc::c_int;
-#[cfg(not(target_os = "android"))]
-type IoctlRequest = libc::c_ulong;
+type IoctlRequest = libc::Ioctl;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PcmConfig {
@@ -452,6 +450,7 @@ impl Pcm {
         ioctl_noarg(self.fd.raw(), PCM_IOCTL_DROP)
     }
 
+    #[cfg(feature = "shairplay")]
     pub(crate) fn write_period(&mut self, samples: &[i16]) -> io::Result<()> {
         let expected_samples = (PERIOD_FRAMES * CHANNELS) as usize;
         if samples.len() != expected_samples {
@@ -460,10 +459,22 @@ impl Pcm {
                 format!("expected {expected_samples} samples, got {}", samples.len()),
             ));
         }
+        self.write_frames(samples).map(|_| ())
+    }
+
+    pub(crate) fn write_frames(&mut self, samples: &[i16]) -> io::Result<u32> {
+        if !samples.len().is_multiple_of(CHANNELS as usize) {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("expected interleaved stereo samples, got {}", samples.len()),
+            ));
+        }
+        let total_frames = u32::try_from(samples.len() / CHANNELS as usize)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "too many PCM frames"))?;
 
         let mut written_frames = 0_u32;
-        while written_frames < PERIOD_FRAMES {
-            let remaining_frames = PERIOD_FRAMES - written_frames;
+        while written_frames < total_frames {
+            let remaining_frames = total_frames - written_frames;
             let sample_offset = written_frames as usize * CHANNELS as usize;
             let buffer = pointer32(samples[sample_offset..].as_ptr())?;
             let mut transfer = XferI::new(buffer, remaining_frames);
@@ -483,7 +494,17 @@ impl Pcm {
             written_frames += completed_frames as u32;
         }
 
-        Ok(())
+        Ok(written_frames)
+    }
+
+    pub(crate) fn delay_frames(&self) -> io::Result<i32> {
+        let mut delay_frames = 0_i32;
+        ioctl(
+            self.fd.raw(),
+            PCM_IOCTL_DELAY,
+            (&mut delay_frames as *mut i32).cast(),
+        )?;
+        Ok(delay_frames)
     }
 }
 
@@ -954,6 +975,7 @@ mod tests {
     fn ioctl_requests_use_32_bit_abi_sizes() {
         assert_eq!(PCM_IOCTL_HW_PARAMS, 0xc25c_4111);
         assert_eq!(PCM_IOCTL_PREPARE, 0x0000_4140);
+        assert_eq!(PCM_IOCTL_DELAY, 0x8004_4121);
         assert_eq!(PCM_IOCTL_SW_PARAMS, 0xc068_4113);
         assert_eq!(PCM_IOCTL_DROP, 0x0000_4143);
         assert_eq!(PCM_IOCTL_WRITEI_FRAMES, 0x400c_4150);

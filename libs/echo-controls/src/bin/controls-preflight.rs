@@ -1,4 +1,4 @@
-use shairplay_echo_controls::{Ring, input_devices};
+use echo_controls::{Ring, input_devices};
 
 fn main() {
     let mut failed = false;

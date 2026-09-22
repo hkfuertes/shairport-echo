@@ -34,6 +34,7 @@ _Static_assert(offsetof(struct snd_xferi, frames) == 8, "xfer frames");
 _Static_assert(SNDRV_PCM_IOCTL_HW_PARAMS == 0xc25c4111U, "hw params ioctl");
 _Static_assert(SNDRV_PCM_IOCTL_SW_PARAMS == 0xc0684113U, "sw params ioctl");
 _Static_assert(SNDRV_PCM_IOCTL_PREPARE == 0x00004140U, "prepare ioctl");
+_Static_assert(SNDRV_PCM_IOCTL_DELAY == 0x80044121U, "delay ioctl");
 _Static_assert(SNDRV_PCM_IOCTL_WRITEI_FRAMES == 0x400c4150U, "writei ioctl");
 _Static_assert(SNDRV_CTL_IOCTL_ELEM_LIST == 0xc0485510U, "elem list ioctl");
 _Static_assert(SNDRV_CTL_IOCTL_ELEM_INFO == 0xc1105511U, "elem info ioctl");

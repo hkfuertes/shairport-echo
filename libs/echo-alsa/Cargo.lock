@@ -268,6 +268,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "echo-alsa"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "shairplay",
+]
+
+[[package]]
 name = "ed25519"
 version = "2.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -902,14 +910,6 @@ dependencies = [
  "tokio",
  "tracing",
  "x25519-dalek",
-]
-
-[[package]]
-name = "shairplay-echo-alsa"
-version = "0.1.0"
-dependencies = [
- "libc",
- "shairplay",
 ]
 
 [[package]]
