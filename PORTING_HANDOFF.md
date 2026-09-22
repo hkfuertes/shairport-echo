@@ -2,12 +2,12 @@
 
 ## Current state
 
-- New local repository: `/home/hkfuertes/projects/shairport-echo`, branch `main`, no remote.
+- Repository: `/home/hkfuertes/projects/shairport-echo`, branch `main`, private origin `https://github.com/hkfuertes/shairport-echo.git`.
 - `libs/echo-alsa` was moved from `../shairplay-echo-alsa/crates/shairplay-echo-alsa`.
 - `libs/echo-controls` was moved from `../shairplay-echo-alsa/crates/shairplay-echo-controls`.
 - The associated ARMv7 C layout probes moved with them into each crate's `tests/` directory.
 - Both crates passed isolated Rust tests, Android API 24 ARMv7 release builds, and compile-time C ABI layout probes after the move. Generated `Cargo.lock` files are intentionally retained; `target/` is ignored.
-- No C ABI, no Shairport backend, no target deployment, and no audio test has been added.
+- Pinned pristine Shairport Sync 5.5.2 and NQPTP 1.2.8 sources now live in `third_party/`; no C ABI, Echo backend, target deployment, or audio test has been added.
 
 Read [`README.md`](README.md) first. The old source worktree is on `feat/android-jni` and intentionally has uncommitted deletions from this physical move; its `main` history still contains the original working application. Do not try to resume development from that dirty worktree.
 
@@ -19,11 +19,11 @@ The current `echo-alsa` crate is not yet a C library. Its public `EchoAlsaSink`/
 
 ## Source to integrate
 
-- C source: `/home/hkfuertes/projects/shairport-sync`
-- Current local branch/HEAD inspected: `agent/static-android-airplay2` at `ef34e937`.
-- Its documented backend seam is `audio.h`'s `audio_output`: `init`, `prepare`, `get_configuration`, `configure`, `start`, `play`, `stop`, `flush`, `delay`, `stats`, `volume`, and `mute`.
+- C source: `third_party/shairport-sync`, pinned at 5.5.2 (`7bad231c18368dbd26f298577f6210e36e4b0797`).
+- Timing daemon: `third_party/nqptp`, pinned at 1.2.8 (`c925f27c1fd12e4033ac477e5a405969b0b0260b`).
+- `audio.h`'s backend seam is `audio_output`: `init`, `prepare`, `get_configuration`, `configure`, `start`, `play`, `stop`, `flush`, `delay`, `stats`, `volume`, and `mute`.
 
-Use that seam; do not copy Shairport protocol code into Rust.
+Use that seam; do not copy Shairport protocol code into Rust. `../openairplay2-echo` is a reference, not a source of truth.
 
 ## Recommended next slices
 
