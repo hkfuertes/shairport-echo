@@ -1,51 +1,45 @@
-# Handoff: port Shairport Sync with Echo hardware libraries
+# Handoff: Shairport Sync on Echo Biscuit
 
 ## Current state
 
 - Repository: `/home/hkfuertes/projects/shairport-echo`, branch `main`, private origin `https://github.com/hkfuertes/shairport-echo.git`.
-- `libs/echo-alsa` was moved from `../shairplay-echo-alsa/crates/shairplay-echo-alsa`.
-- `libs/echo-controls` was moved from `../shairplay-echo-alsa/crates/shairplay-echo-controls`.
-- The associated ARMv7 C layout probes moved with them into each crate's `tests/` directory.
-- Both crates passed isolated Rust tests, Android API 24 ARMv7 release builds, and compile-time C ABI layout probes after the move. Generated `Cargo.lock` files are intentionally retained; `target/` is ignored.
-- Pinned pristine Shairport Sync 5.5.2 and NQPTP 1.2.8 sources now live in `third_party/`; no C ABI, Echo backend, target deployment, or audio test has been added.
+- Upstream sources are pristine snapshots in `third_party/`: Shairport Sync 5.5.2 (`7bad231c18368dbd26f298577f6210e36e4b0797`) and NQPTP 1.2.8 (`c925f27c1fd12e4033ac477e5a405969b0b0260b`). Keep project changes outside those trees.
+- `libs/echo-alsa` and `libs/echo-controls` remain independent Rust packages. `echo-alsa` now has a C-safe static-library ABI, but it is a fallback, not the first Shairport audio path. Controls are deferred to v2.
+- `Dockerfile` builds `alsa-open-probe`: an ARMv7 Android API 24 PIE linked to Bionic and static upstream ALSA 1.2.14. ALSA's unsupported SysV-SHM components are excluded using upstream configure options and `ac_cv_header_sys_shm_h=no`.
+- The silent probe was built and ran on the attached Biscuit. With `ALSA_CONFIG_PATH` set to `config/echo-alsa.conf`, it opened and configured `echo` as S16_LE, 48,000 Hz, 2 channels, 1,024-frame periods and a 4,096-frame buffer, then closed without writing a frame.
 
-Read [`README.md`](README.md) first. The old source worktree is on `feat/android-jni` and intentionally has uncommitted deletions from this physical move; its `main` history still contains the original working application. Do not try to resume development from that dirty worktree.
+## Target state and safety
 
-## Why this split
+- Target: rooted Echo Dot Minimal Base (`biscuit`), Android 7.1.2/API 25, ARMv7, permissive SELinux.
+- The physical speaker amplifier was confirmed `Off` before and after the probe. Do not enable it or write PCM until the user explicitly permits audio.
+- `/system/bin/ledcontroller` (currently a symlink to `airplayd`) owns `pcmC0D23p` normally. It is an init-supervised service. The silent probe used `ctl.stop ledcontroller`, opened PCM, then restored it with `ctl.start ledcontroller`; afterwards the service again owned PCM and the amplifier remained off.
+- Future Shairport startup must deliberately coordinate that service, rather than racing it for the exclusive PCM device.
 
-Shairport Sync should own AirPlay/AP2, timing, multi-room and stereo-pair protocol behavior. These crates should own Echo-specific hardware behavior only: PCM 0:23, mixer/amp/GPIO lifecycle, LED/input access, and ABI checks.
+## Architecture decision
 
-The current `echo-alsa` crate is not yet a C library. Its public `EchoAlsaSink`/`EchoAudioHandler` path is coupled to Rust `shairplay::AudioHandler`; it cannot be dropped directly into a C process.
+Use Shairport Sync's upstream `audio_alsa.c`, statically linking ALSA for Android. Configure `alsa.output_device = "echo"` and ship `config/echo-alsa.conf` to map that alias to hardware card 0/device 23.
 
-## Source to integrate
+Do not add `audio_echo.c` or link the Rust static library into the first receiver. Retain `echo-alsa` for standalone diagnostics and a fallback only if upstream ALSA proves inadequate.
 
-- C source: `third_party/shairport-sync`, pinned at 5.5.2 (`7bad231c18368dbd26f298577f6210e36e4b0797`).
-- Timing daemon: `third_party/nqptp`, pinned at 1.2.8 (`c925f27c1fd12e4033ac477e5a405969b0b0260b`).
-- `audio.h`'s backend seam is `audio_output`: `init`, `prepare`, `get_configuration`, `configure`, `start`, `play`, `stop`, `flush`, `delay`, `stats`, `volume`, and `mute`.
+## Build and validation
 
-Use that seam; do not copy Shairport protocol code into Rust. `../openairplay2-echo` is a reference, not a source of truth.
+```sh
+docker build --target artifact -t shairport-echo-alsa-probe:local .
+```
 
-## Recommended next slices
+The image contains `/alsa-open-probe` and `/echo-alsa.conf`. The probe never calls `snd_pcm_prepare`, `snd_pcm_start`, or a write operation.
 
-1. **Decouple the hardware core.** Split the raw PCM/mixer/lifecycle portion from `sink.rs` so a C-facing build does not need the `shairplay` trait implementation or pull its LGPL dependency into a static archive unnecessarily. Preserve all existing Rust tests and ARMv7 layout probes.
-2. **Add a narrow C ABI.** Prefer `staticlib` first and one checked-in C header with opaque handles and primitive types only. Minimum functions: open/configure, S16_LE frame write, flush, actual delay/stats, dB volume, mute, shutdown. Catch panics/errors at the ABI boundary; never expose Rust types or unwind into C.
-3. **Implement `audio_echo.c` in Shairport Sync.** Register one `audio_output` backend. Negotiate the actual Echo format deliberately (currently 48 kHz, stereo, S16_LE) so Shairport performs any resample/mix. Verify the exact units/layout supplied to `play()` before forwarding frames.
-4. **Preserve sync.** Do not blindly put Shairport's `play()` behind the current extra packet queue. AP2 synchronization depends on backend timing: `delay()` and `stats()` need meaningful hardware data, and flush/start/mute lifecycle must be deterministic. A double buffer with guessed latency can defeat the multi-room benefit.
-5. **Port/build Shairport Sync for Android separately.** Audit its dependencies and Android/Bionic portability before touching hardware. Use the existing API-24 ARMv7 NDK setup as a baseline, but pin/checksum every new build input.
-6. **Validate in order.** Host/unit + C ABI tests; silent target preflight; Shairport AP1 output; AP2 one receiver; only then two-device timing/multi-room. Do not claim stereo pair or multi-room from a successful compile.
+Next slices:
 
-## Controls
+1. Extend the Android Docker build with Shairport Sync's AirPlay 2 dependencies and NQPTP, keeping all source versions and checksums pinned.
+2. Build Shairport with `--with-airplay-2 --with-alsa --with-tinysvcmdns` and the upstream ALSA backend.
+3. Perform a silent target execution/configuration test while the amplifier stays off and `ledcontroller` is safely coordinated.
+4. Validate discovery and AirPlay 2 control-plane behaviour before enabling any speaker route or audio playback.
+5. Package only after license/source-compliance review; do not add controls or LEDs in v1.
 
-`libs/echo-controls` moved for ownership consistency. Do not integrate buttons or LEDs into the first Shairport output backend unless explicitly requested.
+## Constraints
 
-## Safety and provenance
-
-- Do not access target hardware, restart services, open PCM, modify mixer/LED state, or play audio without explicit user approval.
-- Keep the ARMv7 Android ABI assumptions and C probes; target binaries must not be executed on the x86 build host.
-- Review Shairport Sync and Rust dependency licensing before linking/distributing a combined artifact. Preserve the existing no-copy/provenance rules for EchoLocal and unrelated reference code.
-
-## Suggested skills
-
-- `context-mode` for builds and large compiler output.
-- `diagnose` for C/Rust ABI, timing, or Android linker failures.
-- `handoff` before changing sessions.
+- Do not edit vendored upstream trees in place.
+- Target binaries must be Android ARMv7/API 24-compatible; do not run them on the x86 host.
+- No noise: no PCM writes, no route enable, no amplifier enable without fresh user permission.
+- NQPTP is GPL-licensed; review distribution obligations before a release ZIP.
