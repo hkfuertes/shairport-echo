@@ -1,6 +1,8 @@
-# Handoff: Shairport Sync on Echo Biscuit
+# Historical handoff: Shairport Sync on Echo Biscuit
 
-## Current audio A/B (`fix/audio-quality`)
+> **Archived context, not current project status.** This records the audio-port work before the controls bridge and TWRP package. For current installation and limits, see [README.md](README.md) and [build_and_install.md](build_and_install.md).
+
+## Audio A/B at this handoff (`fix/audio-quality`)
 
 - Commit `6baa539` adds the optional `echo` Shairport backend, linked to the separate `libecho_alsa.a` through `echo_alsa.h`; default `alsa` remains available.
 - The first direct arbitrary-frame bridge failed audibly with `EPIPE`. The current bridge accumulates 1,024-frame periods, retries the same period after an XRUN, and includes its pending frames in Shairport delay/statistics accounting.
@@ -8,7 +10,7 @@
 - `echo-airplay crate` selects `echo-shairport-sync-echo.conf`, which limits hardware volume to 30 dB so normal AirPlay slider positions remain audible.
 - Physical Echo volume/buttons to iPhone are not implemented. The earlier report that audio continued after the sender app was killed also needs a dedicated teardown test; do not claim it is fixed.
 
-## Current state
+## State at this handoff
 
 - Repository: `/home/hkfuertes/projects/shairport-echo`, branch `main`, private origin `https://github.com/hkfuertes/shairport-echo.git`.
 - Upstream sources are pristine snapshots in `third_party/`: Shairport Sync 5.5.2 (`7bad231c18368dbd26f298577f6210e36e4b0797`) and NQPTP 1.2.8 (`c925f27c1fd12e4033ac477e5a405969b0b0260b`). Keep project changes outside those trees.

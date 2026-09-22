@@ -2,7 +2,7 @@
 
 This covers the recoverable TWRP ZIP for rooted Biscuit and Radar devices, plus the older manual development path.
 
-The current audio path is validated on Biscuit only. Before using Radar, run a read-only/preflight check and verify its PCM node, ALSA controls, and `ledcontroller` ownership; do not assume they match Biscuit.
+The TWRP lifecycle has been validated on Biscuit and Radar/Radar Puffin. Attended audio quality is validated on Biscuit and basic AirPlay playback has been observed on Radar; before changing a device's hardware configuration, run a read-only preflight and verify its PCM node, ALSA controls, and `ledcontroller` ownership.
 
 ## Prerequisites
 
