@@ -13,8 +13,9 @@ static int (*const stats_fn)(echo_alsa_t *, echo_alsa_stats_t *) = echo_alsa_sta
 static int (*const get_volume_fn)(echo_alsa_t *, double *) = echo_alsa_get_volume_db;
 static int (*const read_system_volume_fn)(double *) = echo_alsa_read_system_volume_db;
 static int (*const adjust_volume_fn)(echo_alsa_t *, int, double *) = echo_alsa_adjust_volume_db;
+static int (*const adjust_system_volume_fn)(int, double *) = echo_alsa_adjust_system_volume_db;
 
 int main(void) {
   return open_fn == 0 || write_fn == 0 || stats_fn == 0 || get_volume_fn == 0 ||
-         read_system_volume_fn == 0 || adjust_volume_fn == 0;
+         read_system_volume_fn == 0 || adjust_volume_fn == 0 || adjust_system_volume_fn == 0;
 }

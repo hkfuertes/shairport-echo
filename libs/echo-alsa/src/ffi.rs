@@ -216,6 +216,12 @@ fn read_system_volume_db() -> io::Result<f64> {
     Ok(f64::from(current_volume_db(Mixer::open()?.volume()?)))
 }
 
+fn adjust_system_volume_db(steps: c_int) -> io::Result<f64> {
+    let mut mixer = Mixer::open()?;
+    mixer.set_db(stepped_volume_db(mixer.volume()?, steps))?;
+    Ok(f64::from(current_volume_db(mixer.volume()?)))
+}
+
 fn monotonic_time_ns() -> io::Result<u64> {
     let mut timestamp = MaybeUninit::<libc::timespec>::zeroed();
     // SAFETY: timestamp points to writable storage for a timespec.
@@ -443,6 +449,18 @@ pub extern "C" fn echo_alsa_read_system_volume_db(out: *mut f64) -> c_int {
     ffi_status(|| {
         // SAFETY: out was checked for null and belongs to the C caller.
         unsafe { *out = read_system_volume_db()? };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn echo_alsa_adjust_system_volume_db(steps: c_int, out: *mut f64) -> c_int {
+    if out.is_null() {
+        return -libc::EINVAL;
+    }
+    ffi_status(|| {
+        // SAFETY: out was checked for null and belongs to the C caller.
+        unsafe { *out = adjust_system_volume_db(steps)? };
         Ok(())
     })
 }
