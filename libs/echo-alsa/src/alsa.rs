@@ -40,6 +40,10 @@ const RESERVED_OFFSET: usize = 540;
 const XFERI_RESULT_OFFSET: usize = 0;
 const XFERI_BUFFER_OFFSET: usize = 4;
 const XFERI_FRAMES_OFFSET: usize = 8;
+const CTL_EVENT_SIZE: usize = 72;
+const CTL_EVENT_TYPE_OFFSET: usize = 0;
+const CTL_EVENT_MASK_OFFSET: usize = 4;
+const CTL_EVENT_NUMID_OFFSET: usize = 8;
 
 #[cfg(test)]
 const ELEM_ID_SIZE: usize = 64;
@@ -104,6 +108,7 @@ const CTL_IOCTL_ELEM_LIST: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x10, ELEM_LIST
 const CTL_IOCTL_ELEM_INFO: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x11, ELEM_INFO_SIZE);
 const CTL_IOCTL_ELEM_READ: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x12, ELEM_VALUE_SIZE);
 const CTL_IOCTL_ELEM_WRITE: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x13, ELEM_VALUE_SIZE);
+const CTL_IOCTL_SUBSCRIBE_EVENTS: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x16, size_of::<i32>());
 const CTL_IOCTL_TLV_READ: u32 = ioc(IOC_READ | IOC_WRITE, b'U', 0x1a, 8);
 
 type IoctlRequest = libc::Ioctl;
@@ -184,6 +189,104 @@ pub struct MasterVolume {
     pub enabled: [bool; 2],
 }
 
+/// A value-change notification from `/dev/snd/controlC0`.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MixerEvent {
+    Volume,
+    Amplifier,
+}
+
+/// Direct system mixer owner for a control daemon. It never opens the exclusive PCM device.
+pub struct SystemMixer {
+    mixer: Mixer,
+}
+
+impl SystemMixer {
+    pub fn open() -> io::Result<Self> {
+        Ok(Self {
+            mixer: Mixer::open()?,
+        })
+    }
+
+    pub fn subscribe_events(&mut self) -> io::Result<()> {
+        let mut enabled = 1_i32;
+        ioctl(
+            self.mixer.fd.raw(),
+            CTL_IOCTL_SUBSCRIBE_EVENTS,
+            (&mut enabled as *mut i32).cast(),
+        )
+    }
+
+    /// Reads one subscribed control event. Unknown controls and non-element events are ignored.
+    pub fn next_event(&self) -> io::Result<Option<MixerEvent>> {
+        let mut event = [0_u8; CTL_EVENT_SIZE];
+        // SAFETY: event is writable for the exact ARMv7 snd_ctl_event size.
+        let count = unsafe {
+            libc::read(
+                self.mixer.fd.raw(),
+                event.as_mut_ptr().cast::<libc::c_void>(),
+                event.len(),
+            )
+        };
+        if count < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if count as usize != event.len() {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "short ALSA control event",
+            ));
+        }
+        if i32::from_ne_bytes(event[CTL_EVENT_TYPE_OFFSET..CTL_EVENT_TYPE_OFFSET + 4].try_into().unwrap())
+            != 0
+        {
+            return Ok(None);
+        }
+        let mask = u32::from_ne_bytes(event[CTL_EVENT_MASK_OFFSET..CTL_EVENT_MASK_OFFSET + 4].try_into().unwrap());
+        if mask & 1 == 0 {
+            return Ok(None);
+        }
+        let numid = u32::from_ne_bytes(event[CTL_EVENT_NUMID_OFFSET..CTL_EVENT_NUMID_OFFSET + 4].try_into().unwrap());
+        if numid == self.mixer.volume_id || numid == self.mixer.switch_id {
+            Ok(Some(MixerEvent::Volume))
+        } else if numid == self.mixer.amp_id {
+            Ok(Some(MixerEvent::Amplifier))
+        } else {
+            Ok(None)
+        }
+    }
+
+    pub fn volume(&self) -> io::Result<MasterVolume> {
+        self.mixer.volume()
+    }
+
+    pub fn set_volume_db(&mut self, db: f32) -> io::Result<MasterVolume> {
+        self.mixer.set_db(db)?;
+        self.mixer.volume()
+    }
+
+    pub fn adjust_volume_db(&mut self, steps: i8) -> io::Result<MasterVolume> {
+        let current = self.mixer.volume()?;
+        let db = current
+            .gain_db
+            .into_iter()
+            .zip(current.enabled)
+            .filter_map(|(db, enabled)| enabled.then_some(db))
+            .fold(-30.0_f32, f32::max);
+        let next = (db + f32::from(steps)).clamp(-30.0, 0.0);
+        self.mixer.set_db(if next <= -30.0 { -144.0 } else { next })?;
+        self.mixer.volume()
+    }
+
+    pub fn set_amp(&mut self, enabled: bool) -> io::Result<()> {
+        self.mixer.set_amp(enabled)
+    }
+
+    pub fn as_raw_fd(&self) -> RawFd {
+        self.mixer.fd.raw()
+    }
+}
+
 // System master and speaker gates, never a per-stream software multiplier.
 pub(crate) struct Mixer {
     fd: Fd,
@@ -239,9 +342,18 @@ impl Mixer {
     }
 
     pub(crate) fn configure_output(&mut self) -> io::Result<()> {
+        self.configure_output_without_amp()?;
+        self.set_amp(true)
+    }
+
+    /// Configures the PCM route without taking ownership of the speaker amplifier.
+    pub(crate) fn configure_output_without_amp(&mut self) -> io::Result<()> {
         self.write(self.right_channel_id, &[u32::from(RIGHT_CHANNEL_ONLY)])?;
-        self.write(self.amp_id, &[1])?;
         self.release_gpio_mute()
+    }
+
+    pub(crate) fn set_amp(&mut self, enabled: bool) -> io::Result<()> {
+        self.write(self.amp_id, &[u32::from(enabled)])
     }
 
     pub(crate) fn release_gpio_mute(&mut self) -> io::Result<()> {
@@ -250,7 +362,7 @@ impl Mixer {
     }
 
     pub(crate) fn disable_amp(&mut self) -> io::Result<()> {
-        self.write(self.amp_id, &[0])
+        self.set_amp(false)
     }
 
     pub(crate) fn set_db(&mut self, db: f32) -> io::Result<()> {

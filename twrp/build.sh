@@ -44,7 +44,7 @@ container=
 
 [ -z "$(find "$work/payload" -type l -print)" ] || fail 'artifact contains a symlink'
 [ -x "$work/payload/system/bin/ledcontroller" ] || fail 'missing ledcontroller entrypoint'
-for file in nqptp shairport-sync entropy-seed; do
+for file in nqptp shairport-sync entropy-seed echo-volume-control; do
   [ -x "$work/payload/system/lib/shairport-echo/$file" ] || fail "missing $file"
 done
 

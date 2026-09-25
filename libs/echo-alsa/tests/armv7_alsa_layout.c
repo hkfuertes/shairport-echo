@@ -16,6 +16,10 @@ _Static_assert(sizeof(struct snd_ctl_elem_list) == 72, "snd_ctl_elem_list");
 _Static_assert(sizeof(struct snd_ctl_elem_info) == 272, "snd_ctl_elem_info");
 _Static_assert(sizeof(struct snd_ctl_elem_value) == 712, "snd_ctl_elem_value");
 _Static_assert(_Alignof(struct snd_ctl_elem_value) == 8, "snd_ctl_elem_value alignment");
+_Static_assert(sizeof(struct snd_ctl_event) == 72, "snd_ctl_event");
+_Static_assert(offsetof(struct snd_ctl_event, type) == 0, "ctl event type");
+_Static_assert(offsetof(struct snd_ctl_event, data.elem.mask) == 4, "ctl event mask");
+_Static_assert(offsetof(struct snd_ctl_event, data.elem.id.numid) == 8, "ctl event numid");
 _Static_assert(sizeof(struct snd_ctl_tlv) == 8, "snd_ctl_tlv header");
 _Static_assert(sizeof(long) == 4, "ARMv7 kernel long");
 _Static_assert(offsetof(struct snd_ctl_elem_value, value.integer.value) == 72, "ctl integer values");
@@ -39,6 +43,7 @@ _Static_assert(SNDRV_PCM_IOCTL_WRITEI_FRAMES == 0x400c4150U, "writei ioctl");
 _Static_assert(SNDRV_CTL_IOCTL_ELEM_LIST == 0xc0485510U, "elem list ioctl");
 _Static_assert(SNDRV_CTL_IOCTL_ELEM_INFO == 0xc1105511U, "elem info ioctl");
 _Static_assert(SNDRV_CTL_IOCTL_ELEM_WRITE == 0xc2c85513U, "elem write ioctl");
+_Static_assert(SNDRV_CTL_IOCTL_SUBSCRIBE_EVENTS == 0xc0045516U, "subscribe events ioctl");
 _Static_assert(SNDRV_CTL_IOCTL_TLV_READ == 0xc008551aU, "TLV read ioctl");
 
 int main(void) { return 0; }

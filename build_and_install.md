@@ -23,7 +23,7 @@ docker build --pull=false --target shairport-artifact -t shairport-echo-shairpor
 docker build --pull=false --target nqptp-artifact -t shairport-echo-nqptp:local .
 ```
 
-`shairport-artifact` builds the fully static ARMv7 musl Shairport binary and links the separate Rust `libecho_alsa.a` through `echo_alsa.h`. `nqptp-artifact` builds the matching static musl NQPTP binary.
+`shairport-artifact` builds the fully static ARMv7 musl Shairport binary and links the separate Rust `libecho_alsa.a` through `echo_alsa.h`. `nqptp-artifact` builds the matching static musl NQPTP binary. The complete TWRP artifact also contains `echo-volume-control`, the separate static mixer/LED daemon.
 
 ## TWRP ZIP
 
@@ -40,7 +40,7 @@ Artifacts are written to `out/`. The host-only test validates ZIP layout, suppor
 
 The installer accepts only `biscuit`, `radar`, and `radar_puffin` with `armeabi-v7a`. It saves the original regular `/system/bin/ledcontroller` as `ledcontroller.shairport-echo-orig`, installs the runtime in `/system/lib/shairport-echo/`, and replaces `ledcontroller` with a regular shell entrypoint. It never writes boot, recovery, cache, persist, or `/data`; uninstall restores the saved `ledcontroller` and keeps `/data/shairport-sync.conf`.
 
-On first Android boot, `ledcontroller` turns off the inherited LED boot animation, then seeds `/data/shairport-sync.conf` with `name` from `ro.product.name`. It also persists a root-only `/data/shairport-echo.seed`: the next boot feeds it into the Linux 3.18 random pool before starting crypto libraries, avoiding a 60-second musl `getrandom()` wait. Thereafter the config file is authoritative: edit the name or any other Shairport Sync option and restart the `ledcontroller` service.
+On first Android boot, `ledcontroller` turns off the inherited LED boot animation, then seeds `/data/shairport-sync.conf` with `name` from `ro.product.name`. It starts `echo-volume-control` before NQPTP and Shairport, with local UDP metadata on `127.0.0.1:45678`, `--no-volume-buttons`, and `--sync-with-mic-mute`. Metadata drives only volume and the ring; the physical privacy state alone gates the speaker amp. It also persists a root-only `/data/shairport-echo.seed`: the next boot feeds it into the Linux 3.18 random pool before starting crypto libraries, avoiding a 60-second musl `getrandom()` wait. Thereafter the config file is authoritative: edit the name or any other Shairport Sync option and restart the `ledcontroller` service.
 
 Install only from TWRP on an explicitly selected device:
 
@@ -146,7 +146,7 @@ The upstream ALSA mode requires the attended route helper before audible playbac
 adb -s "$serial" shell "$root/echo-route on"
 ```
 
-The `crate` backend configures the Echo output itself when audio first arrives. It has validated periodized playback and iPhone AirPlay-to-ALSA volume, but physical Echo controls to iPhone and sender-app-kill teardown still need dedicated validation.
+The Echo backend configures PCM/routing when audio first arrives. `echo-volume-control` owns volume, speaker amplification and the ring through upstream local metadata; it deliberately sends no device-to-iPhone AP2 controls. This new split still needs dedicated hardware validation.
 
 Read-only checks:
 

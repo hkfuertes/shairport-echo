@@ -8,10 +8,10 @@ Experimental AirPlay 2 receiver for rooted Android ARMv7 Echo Dot Minimal Base d
 
 - Receives AirPlay 2 on the Echo's Android 7.1.2 ARMv7 system with TinySVCmDNS discovery and NQPTP timing. Shairport and NQPTP are fully static musl binaries (real `pthread_cancel`, no Bionic dependency or compatibility patches).
 - Uses the separate Rust `libecho_alsa.a` hardware library through Shairport's `audio_echo` backend: 48 kHz stereo S16_LE, 1,024-frame periods, four-period PCM buffer, mono speaker mixdown, and retry of the same period after an XRUN.
-- Bridges physical Echo volume, Action buttons, and the LED ring to the ALSA mixer and AirPlay 2 event channel. ALSA remains the volume source of truth.
+- Runs a separate static `echo-volume-control` daemon for the LED ring and user-facing mixer controls. Shairport emits upstream metadata over localhost UDP; it no longer contains Echo button, LED, or AP2 reverse-control logic. With `--sync-with-mic-mute`, the physical privacy state is the speaker-amp kill switch; AirPlay playback never controls it. The audio backend retains PCM, routing and XRUN recovery.
 - Builds a reversible TWRP ZIP for `biscuit`, `radar`, and `radar_puffin` only. It preserves the original regular `/system/bin/ledcontroller`, replaces it with a regular shell entrypoint, and restores the original on uninstall. The `shairport-sync` binary itself is generic: all Echo-specific setup lives in that shell.
 - Turns off the inherited LED boot animation. `/data/shairport-sync.conf` is seeded on first boot (name from `ro.product.name`) and is authoritative thereafter: any Shairport Sync option can be set there. `general.model` (patch) picks the sender icon, e.g. `AirPort10,115` or `AudioAccessory5,1`. `/data/shairport-echo.seed` restores kernel entropy on later boots, avoiding musl's `getrandom()` startup wait.
-- Shairport patches live in `patches/shairport-sync/`: the series (`--with-echo-alsa`, `--with-echo-controls`, `general.model`, TinySVCmDNS AP2 registration, AP2 reverse-event backport) applies alone to pristine upstream, e.g. from Buildroot.
+- Shairport patches live in `patches/shairport-sync/`: the three-patch series (`--with-echo-alsa` with external controls, `general.model`, TinySVCmDNS AP2 registration) applies alone to pristine upstream, e.g. from Buildroot.
 
 ## Build and test
 
@@ -28,9 +28,8 @@ Install only from TWRP on an explicitly selected supported device. Full prerequi
 ## Validation status
 
 - `make test` verifies ZIP structure, device gating, fresh install, upgrade, uninstall, config seeding, and `/data/shairport-sync.conf` preservation.
-- The shell `ledcontroller`, static musl binaries, config seeding, persisted entropy seed, and `general.model` were installed and booted on Biscuit. Realtime/buffered audio, controls, LEDs, and teardown still need attended hardware validation.
-- That previous ZIP was installed and hash-verified through TWRP on Biscuit and Radar. Both start NQPTP and Shairport automatically after Wi-Fi is available; the ring is black at boot and PCM remains closed until playback.
-- Attended AirPlay playback, iPhone volume, physical controls, and LED behavior have been exercised on hardware. This does **not** establish multi-room synchronization or native HomePod stereo pairing.
+- The shell `ledcontroller`, static musl binaries, config seeding, persisted entropy seed, and `general.model` were installed and booted on Biscuit. The new external control daemon, its metadata path and its microphone-mute amp gate have not yet been validated on hardware.
+- Earlier attended audio validation covered the previous embedded-controls build only. This does **not** establish multi-room synchronization or native HomePod stereo pairing.
 
 ## Limits and safety
 
@@ -52,7 +51,8 @@ This project was developed with substantial assistance from AI coding agents. Ma
 ## Repository layout
 
 - [`third_party/`](third_party/README.md): pristine, checksum-pinned upstream snapshots.
-- [`patches/shairport-sync/`](patches/shairport-sync/): vendorable Android, audio, and controls patches.
+- [`patches/shairport-sync/`](patches/shairport-sync/): vendorable mDNS, model and Echo-audio patches.
 - [`libs/echo-alsa/`](libs/echo-alsa): reusable Echo ALSA C ABI.
 - [`libs/echo-controls/`](libs/echo-controls): reusable Echo controls C ABI.
+- [`libs/echo-volume-control/`](libs/echo-volume-control/): static external mixer/LED daemon, mirrored from `echo-libs`.
 - [`twrp/`](twrp/): reversible installer and package build tooling.

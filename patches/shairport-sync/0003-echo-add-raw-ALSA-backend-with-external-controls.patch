@@ -1,19 +1,19 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Miguel Fuertes <hkfuertes@users.noreply.github.com>
 Date: Fri, 25 Sep 2026 09:16:39 +0200
-Subject: [PATCH 4/5] echo: add --with-echo-alsa output backend
+Subject: [PATCH 3/3] echo: add raw ALSA backend with external controls
 
-Optional output backend "echo" using libecho_alsa.a (echo-libs): 48 kHz S16_LE,
-1024-frame periods, XRUN retry and hardware volume. Off unless configured.
+Keep PCM routing and XRUN GPIO recovery in the backend, but delegate volume, mute and speaker amplification to a separate Echo control service.
 
 Upstream: not applicable (Amazon Echo hardware only)
+
 Signed-off-by: Miguel Fuertes <hkfuertes@users.noreply.github.com>
 ---
  Makefile.am  |   5 +
- audio.c      |   6 +
- audio_echo.c | 319 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ audio.c      |   6 ++
+ audio_echo.c | 291 +++++++++++++++++++++++++++++++++++++++++++++++++++
  configure.ac |   7 ++
- 4 files changed, 337 insertions(+)
+ 4 files changed, 309 insertions(+)
  create mode 100644 audio_echo.c
 
 diff --git a/Makefile.am b/Makefile.am
@@ -58,10 +58,10 @@ index c1d2734..0d33052 100644
  #endif
 diff --git a/audio_echo.c b/audio_echo.c
 new file mode 100644
-index 0000000..011d586
+index 0000000..bb09cf5
 --- /dev/null
 +++ b/audio_echo.c
-@@ -0,0 +1,319 @@
+@@ -0,0 +1,291 @@
 +/*
 + * Echo raw-ALSA audio backend. This file is part of Shairport Sync.
 + *
@@ -92,10 +92,6 @@ index 0000000..011d586
 +static int16_t echo_period[ECHO_PERIOD_FRAMES * ECHO_CHANNELS];
 +static uint32_t echo_pending_frames = 0;
 +static int echo_discontinuity = 1;
-+static int echo_volume_set = 0;
-+static double echo_volume = -6350.0;
-+static int echo_mute_set = 0;
-+static int echo_mute = 0;
 +
 +static volume_range_t echo_volume_range = {.minimum_volume_dB = -6350, .maximum_volume_dB = 0};
 +static output_parameters_t echo_parameters = {.volume_range = &echo_volume_range};
@@ -126,19 +122,12 @@ index 0000000..011d586
 +    return rc;
 +  }
 +
-+  if (echo_volume_set) {
-+    rc = echo_alsa_set_volume_db(device, echo_volume / 100.0);
-+    if (rc != 0) {
-+      echo_alsa_close(device);
-+      return rc;
-+    }
-+  }
-+  if (echo_mute_set) {
-+    rc = echo_alsa_set_mute(device, echo_mute);
-+    if (rc != 0) {
-+      echo_alsa_close(device);
-+      return rc;
-+    }
++  // Volume, mute and speaker amplification are owned by echo-volume-control.
++  // This handle retains only PCM, routing and XRUN GPIO recovery.
++  rc = echo_alsa_set_external_controls(device, 1);
++  if (rc != 0) {
++    echo_alsa_close(device);
++    return rc;
 +  }
 +
 +  rc = echo_alsa_start(device);
@@ -335,30 +324,13 @@ index 0000000..011d586
 +}
 +
 +static void volume(double vol) {
-+  pthread_mutex_lock(&echo_mutex);
-+  echo_volume = vol;
-+  echo_volume_set = 1;
-+  debug(2, "echo: setting hardware volume to %.2f dB", echo_volume / 100.0);
-+  if (echo_device != NULL) {
-+    int rc = echo_alsa_set_volume_db(echo_device, echo_volume / 100.0);
-+    if (rc != 0)
-+      debug(1, "echo: set volume failed: %d", rc);
-+  }
-+  pthread_mutex_unlock(&echo_mutex);
++  // Metadata carries this to echo-volume-control, the sole mixer owner.
++  debug(2, "echo: handing volume %.2f dB to echo-volume-control", vol / 100.0);
 +}
 +
 +static int mute(int do_mute) {
-+  int rc = 0;
-+  pthread_mutex_lock(&echo_mutex);
-+  echo_mute = do_mute != 0;
-+  echo_mute_set = 1;
-+  if (echo_device != NULL)
-+    rc = echo_alsa_set_mute(echo_device, echo_mute);
-+  pthread_mutex_unlock(&echo_mutex);
-+  if (rc != 0) {
-+    debug(1, "echo: set mute failed: %d", rc);
-+    return 0;
-+  }
++  // The pvol metadata record carries the same -144 dB sentinel to the controller.
++  debug(2, "echo: handing mute %d to echo-volume-control", do_mute != 0);
 +  return 1;
 +}
 +
@@ -382,7 +354,7 @@ index 0000000..011d586
 +                           .volume = &volume,
 +                           .parameters = &parameters};
 diff --git a/configure.ac b/configure.ac
-index e724af6..24bd828 100644
+index 4087ea6..f1f2de9 100644
 --- a/configure.ac
 +++ b/configure.ac
 @@ -260,6 +260,13 @@ if test "x$with_alsa" = "xyes" ; then

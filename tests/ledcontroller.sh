@@ -36,6 +36,8 @@ run() {
 
 [ "$(run biscuit_minimal)" = "config=$config" ] || fail 'dry run did not report the config'
 grep -Fqx '  name = "biscuit_minimal";' "$config" || fail 'name was not seeded from ro.product.name'
+grep -Fqx '  socket_port = 45678;' "$config" || fail 'metadata port was not seeded'
+grep -Fqx '  include_cover_art = "no";' "$config" || fail 'metadata cover-art setting was not seeded'
 grep -Fq '@NAME@' "$config" && fail 'placeholder survived seeding'
 [ "$(cat "$ring/boot_animation")" = 0 ] || fail 'boot animation was not disabled'
 [ "$(cat "$ring/frame")" = '000000000000000000000000000000000000000000000000000000000000000000000000' ] ||

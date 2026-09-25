@@ -163,13 +163,23 @@ FROM build AS echo-alsa-build
 COPY libs/echo-alsa /src/echo-alsa
 WORKDIR /src/echo-alsa
 RUN cargo build --locked --release --target armv7-unknown-linux-musleabihf \
+    && "$CC" -c tests/armv7_alsa_layout.c -o /tmp/armv7-alsa-layout.o \
+    && "$CC" -Iinclude -c tests/echo_alsa_ffi_header.c -o /tmp/echo-alsa-ffi-header.o \
     && test -f target/armv7-unknown-linux-musleabihf/release/libecho_alsa.a
+
+FROM build AS volume-control-build
+COPY libs/echo-alsa /src/echo-alsa
+COPY libs/echo-controls /src/echo-controls
+COPY libs/echo-volume-control /src/echo-volume-control
+WORKDIR /src/echo-volume-control
+RUN cargo test --locked \
+    && cargo build --locked --release --target armv7-unknown-linux-musleabihf \
+    && "$STRIP" target/armv7-unknown-linux-musleabihf/release/echo-volume-control \
+    && check-static target/armv7-unknown-linux-musleabihf/release/echo-volume-control
 
 FROM shairport-deps AS shairport-build
 COPY --from=echo-alsa-build /src/echo-alsa/target/armv7-unknown-linux-musleabihf/release/libecho_alsa.a /opt/armv7-musl/lib/libecho_alsa.a
 COPY libs/echo-alsa/include/echo_alsa.h /opt/armv7-musl/include/echo_alsa.h
-COPY --from=controls-build /src/echo-controls/target/armv7-unknown-linux-musleabihf/release/libecho_controls.a /opt/armv7-musl/lib/libecho_controls.a
-COPY libs/echo-controls/include/echo_controls.h /opt/armv7-musl/include/echo_controls.h
 COPY third_party/shairport-sync /src/shairport-sync
 COPY patches/shairport-sync /patches/shairport-sync
 WORKDIR /src/shairport-sync
@@ -181,7 +191,7 @@ RUN for patch in /patches/shairport-sync/*.patch; do patch -p1 < "$patch"; done 
        LDFLAGS="-L$PREFIX/lib -static" \
        LIBS='-lm' \
        ../configure --build=x86_64-pc-linux-gnu --host="$HOST" \
-         --with-airplay-2 --with-alsa --with-echo-alsa --with-echo-controls --with-tinysvcmdns --with-ssl=openssl \
+         --with-airplay-2 --with-alsa --with-echo-alsa --with-metadata --with-metadata-multicast --with-tinysvcmdns --with-ssl=openssl \
     && make -j"$(nproc)" \
     && "$STRIP" shairport-sync && check-static shairport-sync
 
@@ -218,6 +228,7 @@ FROM scratch AS twrp-artifact
 COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /payload/system/lib/shairport-echo/shairport-sync
 COPY --from=nqptp-build /src/nqptp/nqptp /payload/system/lib/shairport-echo/nqptp
 COPY --from=seed-build /entropy-seed /payload/system/lib/shairport-echo/entropy-seed
+COPY --from=volume-control-build /src/echo-volume-control/target/armv7-unknown-linux-musleabihf/release/echo-volume-control /payload/system/lib/shairport-echo/echo-volume-control
 COPY --chmod=755 scripts/ledcontroller.sh /payload/system/bin/ledcontroller
 COPY config/echo-alsa.conf /payload/system/lib/shairport-echo/echo-alsa.conf
 COPY config/shairport-sync.conf /payload/system/lib/shairport-echo/shairport-sync.conf

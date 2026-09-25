@@ -28,6 +28,9 @@ typedef struct {
 int echo_alsa_open(echo_alsa_t **out);
 int echo_alsa_close(echo_alsa_t *handle);
 int echo_alsa_get_config(echo_alsa_t *handle, echo_alsa_config_t *out);
+/* Must be called before start. With external controls, this handle only owns PCM and
+ * route/XRUN recovery; another process owns volume, mute and speaker amplification. */
+int echo_alsa_set_external_controls(echo_alsa_t *handle, int enabled);
 int echo_alsa_start(echo_alsa_t *handle);
 int echo_alsa_stop(echo_alsa_t *handle);
 int echo_alsa_flush(echo_alsa_t *handle);
@@ -41,6 +44,9 @@ int echo_alsa_set_volume_db(echo_alsa_t *handle, double volume_db);
 int echo_alsa_get_volume_db(echo_alsa_t *handle, double *out);
 /* Reads only the system mixer; it does not open PCM or change routing/amplification. */
 int echo_alsa_read_system_volume_db(double *out);
+/* Sets only the system mixer, including fractional dB, and returns actual readback.
+ * No PCM, routing or amplifier changes. Rejects NULL out and non-finite volume. */
+int echo_alsa_set_system_volume_db(double volume_db, double *out);
 /* Adjusts this handle's mixer in 1 dB steps within -30..0 dB; the bottom step mutes. */
 int echo_alsa_adjust_volume_db(echo_alsa_t *handle, int steps, double *out);
 /* Adjusts only the system mixer in 1 dB steps; it does not open PCM or change routing/amplification. */
