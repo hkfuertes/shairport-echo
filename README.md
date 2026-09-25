@@ -23,7 +23,7 @@ make test  # also run the host-side ZIP/install/upgrade/uninstall regression
 
 Docker downloads SHA-256-pinned Shairport Sync 5.5.1 and NQPTP 1.2.8 source archives, applies the tracked patch series, and uses checked-in Echo artifacts from the revision recorded in [`libs/README.md`](libs/README.md). The digest-pinned Debian base and checksum-verified musl.cc `armv7l-linux-musleabihf` toolchain keep builds repeatable from a clean machine.
 
-Install only from TWRP on an explicitly selected supported device. Full prerequisites, installation, upgrade, uninstall, and safe manual-development instructions are in [build_and_install.md](build_and_install.md).
+Install the generated ZIP from TWRP on an explicitly selected supported device.
 
 ## Validation status
 
