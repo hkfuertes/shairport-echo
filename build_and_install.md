@@ -40,7 +40,7 @@ Artifacts are written to `out/`. The host-only test validates ZIP layout, suppor
 
 The installer accepts only `biscuit`, `radar`, and `radar_puffin` with `armeabi-v7a`. It saves the original regular `/system/bin/ledcontroller` as `ledcontroller.shairport-echo-orig`, installs the runtime in `/system/lib/shairport-echo/`, and replaces `ledcontroller` with a regular shell entrypoint. It never writes boot, recovery, cache, persist, or `/data`; uninstall restores the saved `ledcontroller` and keeps `/data/shairport-sync.conf`.
 
-On first Android boot, `ledcontroller` turns off the inherited LED boot animation, then seeds `/data/shairport-sync.conf` with `name` from `ro.product.name`. Thereafter that file is authoritative: edit the name or any other Shairport Sync option and restart the `ledcontroller` service.
+On first Android boot, `ledcontroller` turns off the inherited LED boot animation, then seeds `/data/shairport-sync.conf` with `name` from `ro.product.name`. It also persists a root-only `/data/shairport-echo.seed`: the next boot feeds it into the Linux 3.18 random pool before starting crypto libraries, avoiding a 60-second musl `getrandom()` wait. Thereafter the config file is authoritative: edit the name or any other Shairport Sync option and restart the `ledcontroller` service.
 
 Install only from TWRP on an explicitly selected device:
 

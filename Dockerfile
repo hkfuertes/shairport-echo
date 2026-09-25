@@ -205,9 +205,19 @@ RUN autoreconf -fi \
 FROM scratch AS nqptp-artifact
 COPY --from=nqptp-build /src/nqptp/nqptp /nqptp
 
+# Host round-trip check (no CAP_SYS_ADMIN here, so it must still rotate the seed), then the target build.
+FROM build AS seed-build
+COPY tools/entropy-seed.c /src/entropy-seed.c
+RUN gcc -O2 -Wall -Wextra -Werror /src/entropy-seed.c -o /tmp/entropy-seed-host \
+    && /tmp/entropy-seed-host /tmp/seed && a=$(sha256sum /tmp/seed) \
+    && /tmp/entropy-seed-host /tmp/seed && [ "$a" != "$(sha256sum /tmp/seed)" ] && [ "$(stat -c %s /tmp/seed)" = 512 ] \
+    && "$CC" -O2 -Wall -Wextra -Werror -static /src/entropy-seed.c -o /entropy-seed \
+    && "$STRIP" /entropy-seed && check-static /entropy-seed
+
 FROM scratch AS twrp-artifact
 COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /payload/system/lib/shairport-echo/shairport-sync
 COPY --from=nqptp-build /src/nqptp/nqptp /payload/system/lib/shairport-echo/nqptp
+COPY --from=seed-build /entropy-seed /payload/system/lib/shairport-echo/entropy-seed
 COPY --chmod=755 scripts/ledcontroller.sh /payload/system/bin/ledcontroller
 COPY config/echo-alsa.conf /payload/system/lib/shairport-echo/echo-alsa.conf
 COPY config/shairport-sync.conf /payload/system/lib/shairport-echo/shairport-sync.conf

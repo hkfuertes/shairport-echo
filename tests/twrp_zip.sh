@@ -39,6 +39,7 @@ expected_install = {
     "payload/system/lib/shairport-echo/echo-alsa.conf",
     "payload/system/lib/shairport-echo/shairport-sync.conf",
     "payload/system/lib/shairport-echo/nqptp",
+    "payload/system/lib/shairport-echo/entropy-seed",
     "payload/system/lib/shairport-echo/shairport-sync",
 }
 expected_uninstall = {
@@ -53,6 +54,7 @@ for archive in (install, uninstall):
 for name in (
     "payload/system/bin/ledcontroller",
     "payload/system/lib/shairport-echo/nqptp",
+    "payload/system/lib/shairport-echo/entropy-seed",
     "payload/system/lib/shairport-echo/shairport-sync",
 ):
     mode = install.getinfo(name).external_attr >> 16
@@ -73,6 +75,8 @@ file "$tmp/install/payload/system/lib/shairport-echo/shairport-sync" |
   grep -Eq 'ELF 32-bit LSB .*ARM.*EABI5' || fail 'Shairport payload is not ARMv7 EABI5'
 file "$tmp/install/payload/system/lib/shairport-echo/nqptp" |
   grep -Eq 'ELF 32-bit LSB .*ARM.*EABI5' || fail 'NQPTP payload is not ARMv7 EABI5'
+file "$tmp/install/payload/system/lib/shairport-echo/entropy-seed" |
+  grep -Eq 'ELF 32-bit LSB .*ARM.*EABI5' || fail 'entropy-seed payload is not ARMv7 EABI5'
 
 cat >"$tmp/getprop" <<'EOF'
 #!/bin/sh
@@ -118,14 +122,17 @@ check_fresh_lifecycle() {
     fail "$reported ledcontroller differs"
   cmp "$tmp/$reported-original" "$system/bin/ledcontroller.shairport-echo-orig" ||
     fail "$reported original was not preserved"
-  for file in nqptp shairport-sync shairport-sync.conf echo-alsa.conf; do
+  for file in entropy-seed nqptp shairport-sync shairport-sync.conf echo-alsa.conf; do
     cmp "$tmp/install/payload/system/lib/shairport-echo/$file" "$lib/$file" ||
       fail "$reported $file differs"
   done
   grep -qx 'owner=shairport-echo' "$system/etc/shairport-echo/installed" || fail "$reported ownership marker"
   grep -qx "device=$normalized" "$system/etc/shairport-echo/installed" || fail "$reported normalized device"
 
+  # An update may add payload files that the previous install did not have.
+  rm "$lib/entropy-seed"
   run_update "$install_script" "$install_zip" "$system" "$reported"
+  [ -f "$lib/entropy-seed" ] || fail "$reported update did not add a new payload file"
   cmp "$tmp/$reported-original" "$system/bin/ledcontroller.shairport-echo-orig" ||
     fail "$reported update replaced original"
 

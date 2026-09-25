@@ -55,6 +55,7 @@ label_like_system() {
 payload_files() {
   cat <<'EOF'
 system/lib/shairport-echo/nqptp 755
+system/lib/shairport-echo/entropy-seed 755
 system/lib/shairport-echo/shairport-sync 755
 system/lib/shairport-echo/shairport-sync.conf 644
 system/lib/shairport-echo/echo-alsa.conf 644
@@ -96,8 +97,9 @@ verify_ours() {
   [ "$(marker_value "$STATE" owner)" = shairport-echo ] || die 'unknown ownership marker'
   [ "$(marker_value "$STATE" device)" = "$product" ] || die 'marker belongs to another device'
   require_regular "$BACKUP"
+  # Updates may add payload files; anything already there must still be ours.
   payload_files | while read -r path mode; do
-    require_regular "$SYSTEM/${path#system/}"
+    is_absent "$SYSTEM/${path#system/}" || require_regular "$SYSTEM/${path#system/}"
   done
 }
 

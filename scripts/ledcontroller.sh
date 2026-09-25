@@ -81,6 +81,11 @@ trap 'exit 0' HUP INT TERM
 [ -x "$root/nqptp" ] || fail "missing $root/nqptp"
 [ -x "$root/shairport-sync" ] || fail "missing $root/shairport-sync"
 
+# No hwrng and no saved entropy: without this, getrandom() in the crypto libs
+# blocks for minutes after boot. Blocks once on the very first boot.
+"$root/entropy-seed" "$data/shairport-echo.seed" ||
+  echo 'ledcontroller: entropy seed failed; startup may be slow' >&2
+
 while ! "$ip_cmd" -4 addr show dev wlan0 2>/dev/null | grep -q 'inet '; do
   "$sleep_cmd" 1
 done
