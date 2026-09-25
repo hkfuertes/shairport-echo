@@ -1,5 +1,21 @@
-Register both AirPlay 1 and AirPlay 2 services and their generated TXT records through TinySVCmDNS.
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Miguel Fuertes <hkfuertes@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 09:16:39 +0200
+Subject: [PATCH 1/5] tinysvcmdns: register AirPlay 2 service with full TXT
+ records
 
+The TinySVCmDNS backend only registered _raop. Register _airplay too, with the
+generated primary/secondary TXT records, and accept 255-byte TXT entries.
+
+Upstream: candidate (generic fix; not needed when using avahi)
+Signed-off-by: Miguel Fuertes <hkfuertes@users.noreply.github.com>
+---
+ mdns_tinysvcmdns.c | 53 ++++++++++++++++++----------------------------
+ tinysvcmdns.c      | 20 +++++++++++++++--
+ 2 files changed, 39 insertions(+), 34 deletions(-)
+
+diff --git a/mdns_tinysvcmdns.c b/mdns_tinysvcmdns.c
+index c7b5646..f460fcb 100644
 --- a/mdns_tinysvcmdns.c
 +++ b/mdns_tinysvcmdns.c
 @@ -39,9 +39,21 @@
@@ -27,7 +43,7 @@ Register both AirPlay 1 and AirPlay 2 services and their generated TXT records t
    struct ifaddrs *ifalist;
    struct ifaddrs *ifa;
  
-@@ -120,39 +132,16 @@
+@@ -120,39 +132,16 @@ static int mdns_tinysvcmdns_register(char *ap1name, __attribute__((unused)) char
      }
    }
  
@@ -73,3 +89,48 @@ Register both AirPlay 1 and AirPlay 2 services and their generated TXT records t
  
    return 0;
  }
+diff --git a/tinysvcmdns.c b/tinysvcmdns.c
+index 210c91d..7674c2f 100644
+--- a/tinysvcmdns.c
++++ b/tinysvcmdns.c
+@@ -185,6 +185,22 @@ static size_t label_len(uint8_t *pkt_buf, size_t pkt_len, size_t off) {
+   return len;
+ }
+ 
++// creates one DNS TXT character-string (maximum 255 bytes).
++uint8_t *create_txt_label(const char *txt) {
++  if (txt == NULL)
++    return NULL;
++  size_t len = strlen(txt);
++  if (len > 255)
++    die("mDNS TXT record is longer than 255 bytes");
++  uint8_t *s = malloc(len + 2);
++  if (s == NULL)
++    die("can not allocate memory for mDNS TXT record");
++  s[0] = (uint8_t)len;
++  memcpy(s + 1, txt, len);
++  s[len + 1] = '\0';
++  return s;
++}
++
+ // creates a label
+ // free() after use
+ uint8_t *create_label(const char *txt) {
+@@ -541,7 +557,7 @@ void rr_add_txt(struct rr_entry *rr_txt, const char *txt) {
+ 
+   // is current data filled?
+   if (txt_rec->txt == NULL) {
+-    txt_rec->txt = create_label(txt);
++    txt_rec->txt = create_txt_label(txt);
+     return;
+   }
+ 
+@@ -553,7 +569,7 @@ void rr_add_txt(struct rr_entry *rr_txt, const char *txt) {
+   txt_rec->next = malloc(sizeof(struct rr_data_txt));
+ 
+   txt_rec = txt_rec->next;
+-  txt_rec->txt = create_label(txt);
++  txt_rec->txt = create_txt_label(txt);
+   txt_rec->next = NULL;
+ }
+ 

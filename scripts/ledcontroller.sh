@@ -1,10 +1,12 @@
 #!/system/bin/sh
-# Init entrypoint installed as /system/bin/airplayd; ledcontroller points here.
+# Replaces the vendor ledcontroller init entrypoint: generic shairport-sync + nqptp.
 set -eu
 
 root=${SHAIRPORT_ECHO_ROOT:-/system/lib/shairport-echo}
-name_file=${AIRPLAY_NAME_PATH:-/data/AIRPLAY_NAME}
-state_dir=${SHAIRPORT_ECHO_STATE_DIR:-/data/shairport-echo}
+data=${SHAIRPORT_ECHO_DATA:-/data}
+# Seeded from $root/shairport-sync.conf on first boot, then authoritative.
+config=$data/shairport-sync.conf
+log=$data/shairport-echo.log
 # ponytail: Biscuit and Radar use this vendor endpoint; use echo-controls if that changes.
 ring_path=${ECHO_RING_PATH:-/sys/bus/i2c/devices/0-003f}
 getprop_cmd=${GETPROP:-/system/bin/getprop}
@@ -17,23 +19,25 @@ shairport_pid=
 made_shm=0
 
 fail() {
-  echo "airplayd: $*" >&2
+  echo "ledcontroller: $*" >&2
   exit 1
 }
 
-read_name() {
-  if [ -e "$name_file" ]; then
-    [ -f "$name_file" ] || fail "$name_file is not a regular file"
-  else
-    name=$($getprop_cmd ro.product.name) || fail 'could not read ro.product.name'
-    [ -n "$name" ] || fail 'ro.product.name is empty'
-    umask 022
-    printf '%s\n' "$name" >"$name_file" || fail "could not create $name_file"
-  fi
-
-  name=$(cat "$name_file") || fail "could not read $name_file"
-  [ -n "$name" ] || fail "$name_file is empty"
+default_name() {
+  name=$($getprop_cmd ro.product.name 2>/dev/null || true)
+  # ponytail: product names are plain identifiers; anything else would need libconfig/sed escaping.
+  case "$name" in
+    ''|*[!A-Za-z0-9_.\ -]*) name=Echo ;;
+  esac
   printf '%s\n' "$name"
+}
+
+seed_config() {
+  [ -e "$config" ] || {
+    sed "s/@NAME@/$(default_name)/" "$root/shairport-sync.conf" >"$config.$$" &&
+      mv -f "$config.$$" "$config"
+  } || fail "cannot seed $config"
+  [ -f "$config" ] && [ ! -L "$config" ] || fail "$config is not a regular file"
 }
 
 turn_ring_off() {
@@ -63,20 +67,19 @@ cleanup() {
     rmdir /dev/shm 2>/dev/null || true
   fi
 }
-trap cleanup EXIT
-trap 'exit 0' HUP INT TERM
 
-name=$(read_name)
 turn_ring_off
-if [ "${AIRPLAYD_DRY_RUN:-0}" = 1 ]; then
-  printf 'name=%s\n' "$name"
+seed_config
+if [ "${SHAIRPORT_ECHO_DRY_RUN:-0}" = 1 ]; then
+  printf 'config=%s\n' "$config"
   exit 0
 fi
 
+trap cleanup EXIT
+trap 'exit 0' HUP INT TERM
+
 [ -x "$root/nqptp" ] || fail "missing $root/nqptp"
 [ -x "$root/shairport-sync" ] || fail "missing $root/shairport-sync"
-[ -f "$root/echo-alsa.conf" ] || fail "missing $root/echo-alsa.conf"
-[ -f "$root/echo-shairport-sync.conf" ] || fail "missing $root/echo-shairport-sync.conf"
 
 while ! "$ip_cmd" -4 addr show dev wlan0 2>/dev/null | grep -q 'inet '; do
   "$sleep_cmd" 1
@@ -93,22 +96,22 @@ else
   made_shm=1
 fi
 
-mkdir -p "$state_dir"
-"$root/nqptp" >"$state_dir/nqptp.log" 2>&1 &
+: >"$log"
+"$root/nqptp" >>"$log" 2>&1 &
 nqptp_pid=$!
 "$sleep_cmd" 1
 if ! kill -0 "$nqptp_pid" 2>/dev/null; then
-  cat "$state_dir/nqptp.log" >&2 || true
+  cat "$log" >&2 || true
   fail 'nqptp exited during startup'
 fi
 
+# echo-alsa.conf only matters if the config selects output_backend = "alsa".
 ALSA_CONFIG_PATH="$root/echo-alsa.conf" \
-  "$root/shairport-sync" -a "$name" -c "$root/echo-shairport-sync.conf" \
-  >"$state_dir/shairport-sync.log" 2>&1 &
+  "$root/shairport-sync" -c "$config" >>"$log" 2>&1 &
 shairport_pid=$!
 "$sleep_cmd" 1
 if ! kill -0 "$shairport_pid" 2>/dev/null; then
-  cat "$state_dir/shairport-sync.log" >&2 || true
+  cat "$log" >&2 || true
   fail 'shairport-sync exited during startup'
 fi
 

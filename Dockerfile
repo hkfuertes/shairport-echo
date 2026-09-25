@@ -155,7 +155,7 @@ RUN cd /src/ffmpeg \
          --disable-avdevice --disable-avfilter --disable-swscale --disable-network \
          --disable-jni --disable-mediacodec \
          --disable-zlib --disable-bzlib --disable-lzma --disable-iconv --disable-sdl2 \
-         --enable-decoder=alac --enable-decoder=aac --enable-parser=aac --enable-protocol=file --enable-small \
+         --enable-decoder=alac --enable-decoder=aac --enable-parser=aac --enable-protocol=file \
          --extra-libs='-lm -ldl' \
     && make -j"$(nproc)" && make install \
     && sed -i 's/ -landroid -lmediandk//g' "$PREFIX/lib/pkgconfig/libavutil.pc" \
@@ -178,7 +178,8 @@ COPY libs/echo-controls/include/echo_controls.h /opt/armv7-android/include/echo_
 COPY third_party/shairport-sync /src/shairport-sync
 COPY patches/shairport-sync /patches/shairport-sync
 WORKDIR /src/shairport-sync
-RUN for patch in /patches/shairport-sync/*.patch; do patch -p1 < "$patch"; done \
+# Android-only Bionic compatibility first, then the portable series (also usable from Buildroot).
+RUN for patch in /patches/shairport-sync/android/*.patch /patches/shairport-sync/*.patch; do patch -p1 < "$patch"; done \
     && autoreconf -fi \
     && mkdir build && cd build \
     && PKG_CONFIG='pkg-config --static' \
@@ -223,6 +224,6 @@ COPY --from=nqptp-build /src/nqptp/nqptp /nqptp
 FROM scratch AS twrp-artifact
 COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /payload/system/lib/shairport-echo/shairport-sync
 COPY --from=nqptp-build /src/nqptp/nqptp /payload/system/lib/shairport-echo/nqptp
-COPY --chmod=755 scripts/airplayd.sh /payload/system/bin/airplayd
+COPY --chmod=755 scripts/ledcontroller.sh /payload/system/bin/ledcontroller
 COPY config/echo-alsa.conf /payload/system/lib/shairport-echo/echo-alsa.conf
-COPY config/echo-shairport-sync-twrp.conf /payload/system/lib/shairport-echo/echo-shairport-sync.conf
+COPY config/shairport-sync.conf /payload/system/lib/shairport-echo/shairport-sync.conf

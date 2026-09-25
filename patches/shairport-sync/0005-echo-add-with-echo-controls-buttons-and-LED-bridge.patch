@@ -1,0 +1,575 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Miguel Fuertes <hkfuertes@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 09:16:39 +0200
+Subject: [PATCH 5/5] echo: add --with-echo-controls buttons and LED bridge
+
+Optional bridge from Echo buttons/LED ring (libecho_controls.a) to the ALSA
+mixer and AP2 reverse events. Requires --with-echo-alsa. Off unless configured.
+
+Upstream: not applicable (Amazon Echo hardware only)
+Signed-off-by: Miguel Fuertes <hkfuertes@users.noreply.github.com>
+---
+ Makefile.am            |   5 +
+ ap2_event_receiver.c   |   6 +
+ audio_echo.c           |  57 ++++++-
+ configure.ac           |   8 +
+ echo_controls_bridge.c | 376 +++++++++++++++++++++++++++++++++++++++++
+ echo_controls_bridge.h |   9 +
+ 6 files changed, 459 insertions(+), 2 deletions(-)
+ create mode 100644 echo_controls_bridge.c
+ create mode 100644 echo_controls_bridge.h
+
+diff --git a/Makefile.am b/Makefile.am
+index 6545bcd..548ff31 100644
+--- a/Makefile.am
++++ b/Makefile.am
+@@ -97,6 +97,11 @@ shairport_sync_SOURCES += audio_echo.c
+ shairport_sync_LDADD += -lecho_alsa
+ endif
+ 
++if USE_ECHO_CONTROLS
++shairport_sync_SOURCES += echo_controls_bridge.c
++shairport_sync_LDADD += -lecho_controls
++endif
++
+ if USE_JACK
+ shairport_sync_SOURCES += audio_jack.c
+ endif
+diff --git a/ap2_event_receiver.c b/ap2_event_receiver.c
+index 39fe7f8..17b08e2 100644
+--- a/ap2_event_receiver.c
++++ b/ap2_event_receiver.c
+@@ -27,6 +27,9 @@
+ #include "ap2_event_receiver.h"
+ #include "ap2_event_message_handler.h"
+ #include "common.h"
++#ifdef CONFIG_ECHO_CONTROLS
++#include "echo_controls_bridge.h"
++#endif
+ #include "player.h"
+ #include "utilities/network_utilities.h"
+ 
+@@ -78,6 +81,9 @@ void *ap2_event_receiver(void *arg) {
+     pthread_cleanup_push(ap2_event_receiver_cleanup_handler, arg);
+ 
+     ap2_event_send_update_info(conn);
++#ifdef CONFIG_ECHO_CONTROLS
++    echo_controls_sync_volume_on_connect(conn->connection_number);
++#endif
+ 
+     while (1) {
+       usleep(100000);
+diff --git a/audio_echo.c b/audio_echo.c
+index 011d586..4fe3520 100644
+--- a/audio_echo.c
++++ b/audio_echo.c
+@@ -9,6 +9,9 @@
+ 
+ #include "audio.h"
+ #include "common.h"
++#ifdef CONFIG_ECHO_CONTROLS
++#include "echo_controls_bridge.h"
++#endif
+ 
+ #include <echo_alsa.h>
+ #include <errno.h>
+@@ -46,6 +49,46 @@ static int close_device(void) {
+   return rc;
+ }
+ 
++#ifdef CONFIG_ECHO_CONTROLS
++/*
++ * The controls bridge is intentionally the only caller of these helpers. It reads and adjusts
++ * the same ALSA mixer owned by this backend, rather than keeping a second volume value.
++ */
++int echo_audio_get_volume_db(double *out) {
++  if (out == NULL)
++    return -EINVAL;
++  pthread_mutex_lock(&echo_mutex);
++  int rc = (echo_device != NULL) ? echo_alsa_get_volume_db(echo_device, out)
++                                 : echo_alsa_read_system_volume_db(out);
++  pthread_mutex_unlock(&echo_mutex);
++  return rc;
++}
++
++int echo_audio_read_system_volume_db(double *out) {
++  if (out == NULL)
++    return -EINVAL;
++  pthread_mutex_lock(&echo_mutex);
++  int rc = (echo_device != NULL) ? echo_alsa_get_volume_db(echo_device, out)
++                                 : echo_alsa_read_system_volume_db(out);
++  pthread_mutex_unlock(&echo_mutex);
++  return rc;
++}
++
++int echo_audio_adjust_volume_db(int steps, double *out) {
++  if (out == NULL)
++    return -EINVAL;
++  pthread_mutex_lock(&echo_mutex);
++  int rc = (echo_device != NULL) ? echo_alsa_adjust_volume_db(echo_device, steps, out)
++                                 : echo_alsa_adjust_system_volume_db(steps, out);
++  if (rc == 0) {
++    echo_volume = *out * 100.0;
++    echo_volume_set = 1;
++  }
++  pthread_mutex_unlock(&echo_mutex);
++  return rc;
++}
++#endif
++
+ static int open_device(void) {
+   echo_alsa_t *device = NULL;
+   echo_alsa_config_t configuration = {0};
+@@ -97,11 +140,19 @@ static void help(void) {
+ static int init(int argc, char **argv) {
+   (void)argc;
+   (void)argv;
++#ifdef CONFIG_ECHO_CONTROLS
++  int rc = echo_controls_start();
++  if (rc != 0)
++    debug(1, "echo: controls unavailable: %d", rc);
++#endif
+   debug(2, "echo: initialised raw Echo ALSA backend");
+   return 0;
+ }
+ 
+ static void deinit(void) {
++#ifdef CONFIG_ECHO_CONTROLS
++  echo_controls_stop();
++#endif
+   pthread_mutex_lock(&echo_mutex);
+   int rc = close_device();
+   if (rc != 0)
+@@ -271,12 +322,14 @@ static int stats(uint64_t *raw_measurement_time, uint64_t *corrected_measurement
+ }
+ 
+ static void volume(double vol) {
++  int rc = 0;
++  double db = vol / 100.0;
+   pthread_mutex_lock(&echo_mutex);
+   echo_volume = vol;
+   echo_volume_set = 1;
+-  debug(2, "echo: setting hardware volume to %.2f dB", echo_volume / 100.0);
++  debug(2, "echo: setting hardware volume to %.2f dB", db);
+   if (echo_device != NULL) {
+-    int rc = echo_alsa_set_volume_db(echo_device, echo_volume / 100.0);
++    rc = echo_alsa_set_volume_db(echo_device, db);
+     if (rc != 0)
+       debug(1, "echo: set volume failed: %d", rc);
+   }
+diff --git a/configure.ac b/configure.ac
+index 24bd828..0d5369b 100644
+--- a/configure.ac
++++ b/configure.ac
+@@ -267,6 +267,14 @@ if test "x$with_echo_alsa" = "xyes" ; then
+ fi
+ AM_CONDITIONAL([USE_ECHO_ALSA], [test "x$with_echo_alsa" = "xyes"])
+ 
++# Look for Echo buttons and LED controls
++AC_ARG_WITH(echo-controls, [AS_HELP_STRING([--with-echo-controls],[include Echo button and LED controls])])
++if test "x$with_echo_controls" = "xyes" ; then
++  AS_IF([test "x$with_echo_alsa" != "xyes"], [AC_MSG_ERROR([--with-echo-controls requires --with-echo-alsa])])
++  AC_DEFINE([CONFIG_ECHO_CONTROLS], 1, [Include Echo button and LED controls])
++fi
++AM_CONDITIONAL([USE_ECHO_CONTROLS], [test "x$with_echo_controls" = "xyes"])
++
+ # Look for jack flag
+ AC_ARG_WITH(jack, [AS_HELP_STRING([--with-jack],[include a Jack Audio Connection Kit (jack) backend])])
+ if test "x$with_jack" = "xyes" ; then
+diff --git a/echo_controls_bridge.c b/echo_controls_bridge.c
+new file mode 100644
+index 0000000..ce6e51c
+--- /dev/null
++++ b/echo_controls_bridge.c
+@@ -0,0 +1,376 @@
++/* Echo button and LED policy using the separate libecho_controls.a hardware ABI. */
++
++#include "echo_controls_bridge.h"
++
++#include "ap2_event_message_handler.h"
++#include "common.h"
++#include "player.h"
++
++#include <echo_controls.h>
++#include <dirent.h>
++#include <errno.h>
++#include <math.h>
++#include <pthread.h>
++#include <stdint.h>
++#include <stdio.h>
++#include <string.h>
++#include <unistd.h>
++
++#define ECHO_CONTROLS_INPUTS 2U
++#define ECHO_CONTROLS_VOLUME_UP 0U
++#define ECHO_CONTROLS_VOLUME_DOWN 1U
++#define ECHO_CONTROLS_VOLUME_REPEAT_NS 200000000ULL
++#define ECHO_CONTROLS_ACTION_HOLD_NS 700000000ULL
++#define ECHO_CONTROLS_VOLUME_POLL_NS 100000000ULL
++#define ECHO_CONTROLS_VOLUME_HIDE_NS 2000000000ULL
++#define ECHO_CONTROLS_VOLUME_MIN_DB -30.0
++#define ECHO_CONTROLS_VOLUME_MAX_DB 0.0
++#define ECHO_CONTROLS_PLAY_PAUSE 2U
++
++extern rtsp_conn_info *principal_conn;
++extern pthread_rwlock_t principal_conn_lock;
++extern int echo_audio_get_volume_db(double *out);
++extern int echo_audio_read_system_volume_db(double *out);
++extern int echo_audio_adjust_volume_db(int steps, double *out);
++
++static pthread_mutex_t controls_mutex = PTHREAD_MUTEX_INITIALIZER;
++static pthread_t controls_thread;
++static int controls_started = 0;
++static int controls_running = 0;
++static int controls_thread_active = 0;
++static echo_controls_ring_t *ring = NULL;
++static echo_controls_buttons_t *buttons[ECHO_CONTROLS_INPUTS] = {NULL, NULL};
++static uint64_t volume_repeat_at[ECHO_CONTROLS_INPUTS][2] = {{0}};
++static uint64_t action_pressed_at[ECHO_CONTROLS_INPUTS] = {0};
++static double observed_volume_db = 0.0;
++static int observed_volume = 0;
++static int ring_visible = 0;
++static uint64_t next_volume_poll_at = 0;
++static uint64_t hide_volume_at = 0;
++
++static int controls_are_running(void) {
++  pthread_mutex_lock(&controls_mutex);
++  int running = controls_running;
++  pthread_mutex_unlock(&controls_mutex);
++  return running;
++}
++
++static void send_remote_command(unsigned int command) {
++#ifdef CONFIG_AIRPLAY_2
++  pthread_rwlock_rdlock(&principal_conn_lock);
++  if ((principal_conn != NULL) && (principal_conn->airplay_type == ap_2)) {
++    ssize_t result = ap2_event_send_modern_media_remote_command(principal_conn, command);
++    if (result <= 0)
++      debug(1, "echo-controls: AP2 command %u failed: %zd", command, result);
++  } else {
++    debug(2, "echo-controls: no active AP2 session for command %u", command);
++  }
++  pthread_rwlock_unlock(&principal_conn_lock);
++#else
++  (void)command;
++#endif
++}
++
++#ifdef CONFIG_AIRPLAY_2
++static ssize_t send_source_volume(rtsp_conn_info *conn, double db) {
++  double unit_volume = (db <= ECHO_CONTROLS_VOLUME_MIN_DB)
++                           ? 0.0
++                           : (db - ECHO_CONTROLS_VOLUME_MIN_DB) /
++                                 (ECHO_CONTROLS_VOLUME_MAX_DB - ECHO_CONTROLS_VOLUME_MIN_DB);
++  return ap2_event_send_unit_volume_notification(conn, unit_volume);
++}
++#endif
++
++static void notify_source_volume(double db) {
++#ifdef CONFIG_AIRPLAY_2
++  pthread_rwlock_rdlock(&principal_conn_lock);
++  if ((principal_conn != NULL) && (principal_conn->airplay_type == ap_2)) {
++    ssize_t result = send_source_volume(principal_conn, db);
++    if (result <= 0)
++      debug(1, "echo-controls: AP2 volume notification failed: %zd", result);
++  } else {
++    debug(2, "echo-controls: no active AP2 session for volume notification");
++  }
++  pthread_rwlock_unlock(&principal_conn_lock);
++#else
++  (void)db;
++#endif
++}
++
++int echo_controls_sync_volume_on_connect(int connection_number) {
++#ifdef CONFIG_AIRPLAY_2
++  double db = 0.0;
++  int rc = echo_audio_read_system_volume_db(&db);
++  if (rc != 0) {
++    debug(1, "echo-controls: ALSA initial-volume read failed: %d", rc);
++    return rc;
++  }
++
++  pthread_rwlock_rdlock(&principal_conn_lock);
++  if ((principal_conn == NULL) || (principal_conn->connection_number != connection_number) ||
++      (principal_conn->airplay_type != ap_2)) {
++    rc = -ENOTCONN;
++  } else {
++    ssize_t result = send_source_volume(principal_conn, db);
++    rc = (result > 0) ? 0 : -EIO;
++  }
++  pthread_rwlock_unlock(&principal_conn_lock);
++
++  if (rc != 0)
++    debug(1, "echo-controls: initial AP2 volume notification failed: %d", rc);
++  else
++    debug(2, "echo-controls: sent initial ALSA volume %.2f dB", db);
++  return rc;
++#else
++  (void)connection_number;
++  return -ENOTSUP;
++#endif
++}
++
++static void change_volume(int direction) {
++  double db = 0.0;
++  int rc = echo_audio_adjust_volume_db(direction, &db);
++  if (rc != 0) {
++    debug(1, "echo-controls: ALSA volume adjustment failed: %d", rc);
++    return;
++  }
++  notify_source_volume(db);
++}
++
++static void handle_button(size_t input, const echo_controls_button_event_t *event, uint64_t now) {
++  if (event->button == ECHO_CONTROLS_BUTTON_ACTION) {
++    if ((event->state == ECHO_CONTROLS_BUTTON_PRESSED) && (action_pressed_at[input] == 0)) {
++      action_pressed_at[input] = now;
++    } else if (event->state == ECHO_CONTROLS_BUTTON_RELEASED) {
++      uint64_t pressed_at = action_pressed_at[input];
++      action_pressed_at[input] = 0;
++      if ((pressed_at != 0) && (now - pressed_at < ECHO_CONTROLS_ACTION_HOLD_NS))
++        send_remote_command(ECHO_CONTROLS_PLAY_PAUSE);
++    }
++    return;
++  }
++
++  int direction = 0;
++  size_t volume_button = 0;
++  if (event->button == ECHO_CONTROLS_BUTTON_VOLUME_UP) {
++    direction = 1;
++    volume_button = ECHO_CONTROLS_VOLUME_UP;
++  } else if (event->button == ECHO_CONTROLS_BUTTON_VOLUME_DOWN) {
++    direction = -1;
++    volume_button = ECHO_CONTROLS_VOLUME_DOWN;
++  }
++  if (direction == 0)
++    return;
++
++  if ((event->state == ECHO_CONTROLS_BUTTON_PRESSED) &&
++      (volume_repeat_at[input][volume_button] == 0)) {
++    volume_repeat_at[input][volume_button] = now + ECHO_CONTROLS_VOLUME_REPEAT_NS;
++    change_volume(direction);
++  } else if (event->state == ECHO_CONTROLS_BUTTON_RELEASED) {
++    volume_repeat_at[input][volume_button] = 0;
++  }
++  // Kernel repeats and duplicate presses are deliberately ignored; the timer below owns repeats.
++}
++
++static void dispatch_repeats(size_t input, uint64_t now) {
++  for (size_t volume_button = 0; volume_button < 2; volume_button++) {
++    if ((volume_repeat_at[input][volume_button] != 0) &&
++        (now >= volume_repeat_at[input][volume_button])) {
++      volume_repeat_at[input][volume_button] = now + ECHO_CONTROLS_VOLUME_REPEAT_NS;
++      change_volume(volume_button == ECHO_CONTROLS_VOLUME_UP ? 1 : -1);
++    }
++  }
++}
++
++static void show_volume(double db) {
++  uint8_t frame[ECHO_CONTROLS_RING_CHANNELS] = {0};
++  double fraction = (db <= ECHO_CONTROLS_VOLUME_MIN_DB)
++                        ? 0.0
++                        : (db - ECHO_CONTROLS_VOLUME_MIN_DB) /
++                              (ECHO_CONTROLS_VOLUME_MAX_DB - ECHO_CONTROLS_VOLUME_MIN_DB);
++  size_t lit = (size_t)round(fraction * ECHO_CONTROLS_RING_SEGMENTS);
++  if (lit > ECHO_CONTROLS_RING_SEGMENTS)
++    lit = ECHO_CONTROLS_RING_SEGMENTS;
++  for (size_t index = 0; index < lit; index++) {
++    frame[index * 3 + 0] = 32;
++    frame[index * 3 + 1] = 32;
++    frame[index * 3 + 2] = 32;
++  }
++  if (ring != NULL) {
++    int rc = echo_controls_ring_set_frame(ring, frame, sizeof(frame));
++    if (rc != 0)
++      debug(1, "echo-controls: LED update failed: %d", rc);
++  }
++}
++
++static void refresh_led(uint64_t now) {
++  if (now < next_volume_poll_at)
++    return;
++  next_volume_poll_at = now + ECHO_CONTROLS_VOLUME_POLL_NS;
++
++  double db = 0.0;
++  int rc = echo_audio_get_volume_db(&db);
++  if (rc != 0)
++    return;
++  if (!observed_volume) {
++    observed_volume = 1;
++    observed_volume_db = db;
++  } else if (db != observed_volume_db) {
++    show_volume(db);
++    observed_volume_db = db;
++    ring_visible = 1;
++    hide_volume_at = now + ECHO_CONTROLS_VOLUME_HIDE_NS;
++  } else if (ring_visible && (now >= hide_volume_at) && (ring != NULL)) {
++    rc = echo_controls_ring_off(ring);
++    if (rc != 0)
++      debug(1, "echo-controls: LED clear failed: %d", rc);
++    ring_visible = 0;
++  }
++}
++
++static void close_button(size_t input) {
++  if (buttons[input] != NULL) {
++    echo_controls_buttons_close(buttons[input]);
++    buttons[input] = NULL;
++  }
++  volume_repeat_at[input][ECHO_CONTROLS_VOLUME_UP] = 0;
++  volume_repeat_at[input][ECHO_CONTROLS_VOLUME_DOWN] = 0;
++  action_pressed_at[input] = 0;
++}
++
++static void open_buttons(void) {
++  DIR *directory = opendir("/sys/class/input");
++  if (directory == NULL) {
++    debug(1, "echo-controls: cannot enumerate input devices: %d", -errno);
++    return;
++  }
++
++  struct dirent *entry;
++  size_t input = 0;
++  while ((input < ECHO_CONTROLS_INPUTS) && ((entry = readdir(directory)) != NULL)) {
++    if (strncmp(entry->d_name, "event", 5) != 0)
++      continue;
++
++    char name_path[128];
++    char device_name[64] = {0};
++    char device_path[64];
++    snprintf(name_path, sizeof(name_path), "/sys/class/input/%s/device/name", entry->d_name);
++    FILE *name_file = fopen(name_path, "r");
++    if (name_file == NULL)
++      continue;
++    if (fgets(device_name, sizeof(device_name), name_file) == NULL) {
++      fclose(name_file);
++      continue;
++    }
++    fclose(name_file);
++    device_name[strcspn(device_name, "\r\n")] = '\0';
++    if ((strcmp(device_name, "keys") != 0) && (strcmp(device_name, "mtk-kpd") != 0))
++      continue;
++
++    snprintf(device_path, sizeof(device_path), "/dev/input/%s", entry->d_name);
++    int rc = echo_controls_buttons_open(device_path, 1, &buttons[input]);
++    if (rc != 0) {
++      debug(2, "echo-controls: input %s unavailable: %d", device_path, rc);
++      buttons[input] = NULL;
++      continue;
++    }
++    debug(2, "echo-controls: input %s (%s)", device_path, device_name);
++    input++;
++  }
++  closedir(directory);
++}
++
++static void *controls_thread_code(__attribute__((unused)) void *arg) {
++  while (controls_are_running()) {
++    uint64_t now = get_monotonic_time_in_ns();
++    for (size_t input = 0; input < ECHO_CONTROLS_INPUTS; input++) {
++      for (size_t events = 0; (buttons[input] != NULL) && (events < 64); events++) {
++        echo_controls_button_event_t event = {0};
++        int rc = echo_controls_buttons_next(buttons[input], &event);
++        if (rc == -EAGAIN)
++          break;
++        if (rc != 0) {
++          debug(1, "echo-controls: input %zu disabled: %d", input, rc);
++          close_button(input);
++          break;
++        }
++        handle_button(input, &event, now);
++      }
++      dispatch_repeats(input, now);
++    }
++    refresh_led(now);
++    usleep(20000);
++  }
++  return NULL;
++}
++
++int echo_controls_start(void) {
++  pthread_mutex_lock(&controls_mutex);
++  if (controls_started) {
++    pthread_mutex_unlock(&controls_mutex);
++    return 0;
++  }
++
++  int rc = echo_controls_ring_open_default(&ring);
++  if (rc != 0) {
++    debug(1, "echo-controls: LED ring unavailable: %d", rc);
++    ring = NULL;
++  }
++  open_buttons();
++
++  controls_started = 1;
++  controls_running = (ring != NULL) || (buttons[0] != NULL) || (buttons[1] != NULL);
++  if (controls_running) {
++    rc = pthread_create(&controls_thread, NULL, controls_thread_code, NULL);
++    if (rc != 0) {
++      controls_running = 0;
++      close_button(0);
++      close_button(1);
++      if (ring != NULL) {
++        echo_controls_ring_close(ring);
++        ring = NULL;
++      }
++      controls_started = 0;
++      pthread_mutex_unlock(&controls_mutex);
++      return -rc;
++    }
++    controls_thread_active = 1;
++  }
++  pthread_mutex_unlock(&controls_mutex);
++  return 0;
++}
++
++void echo_controls_stop(void) {
++  pthread_mutex_lock(&controls_mutex);
++  if (!controls_started) {
++    pthread_mutex_unlock(&controls_mutex);
++    return;
++  }
++  controls_running = 0;
++  int join_thread = controls_thread_active;
++  pthread_mutex_unlock(&controls_mutex);
++
++  if (join_thread)
++    pthread_join(controls_thread, NULL);
++
++  pthread_mutex_lock(&controls_mutex);
++  close_button(0);
++  close_button(1);
++  if (ring != NULL) {
++    echo_controls_ring_close(ring);
++    ring = NULL;
++  }
++  observed_volume = 0;
++  ring_visible = 0;
++  next_volume_poll_at = 0;
++  hide_volume_at = 0;
++  controls_thread_active = 0;
++  controls_started = 0;
++  pthread_mutex_unlock(&controls_mutex);
++}
++
++void echo_controls_show_volume(double db) {
++  pthread_mutex_lock(&controls_mutex);
++  show_volume(db);
++  pthread_mutex_unlock(&controls_mutex);
++}
+diff --git a/echo_controls_bridge.h b/echo_controls_bridge.h
+new file mode 100644
+index 0000000..ee6165b
+--- /dev/null
++++ b/echo_controls_bridge.h
+@@ -0,0 +1,9 @@
++#ifndef ECHO_CONTROLS_BRIDGE_H
++#define ECHO_CONTROLS_BRIDGE_H
++
++int echo_controls_start(void);
++void echo_controls_stop(void);
++void echo_controls_show_volume(double db);
++int echo_controls_sync_volume_on_connect(int connection_number);
++
++#endif

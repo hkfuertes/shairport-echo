@@ -9,8 +9,9 @@ Experimental AirPlay 2 receiver for rooted Android ARMv7 Echo Dot Minimal Base d
 - Receives AirPlay 2 on Android 7.1.2/API 25 ARMv7 with TinySVCmDNS discovery and NQPTP timing.
 - Uses the separate Rust `libecho_alsa.a` hardware library through Shairport's `audio_echo` backend: 48 kHz stereo S16_LE, 1,024-frame periods, four-period PCM buffer, mono speaker mixdown, and retry of the same period after an XRUN.
 - Bridges physical Echo volume, Action buttons, and the LED ring to the ALSA mixer and AirPlay 2 event channel. ALSA remains the volume source of truth.
-- Builds a reversible TWRP ZIP for `biscuit`, `radar`, and `radar_puffin` only. It preserves the original regular `/system/bin/ledcontroller`, replaces it with the relative `ledcontroller -> airplayd` symlink, verifies payload hashes, and restores the original on uninstall.
-- Turns off the inherited LED boot animation. `/data/AIRPLAY_NAME` is created from `ro.product.name` on first boot and is authoritative thereafter.
+- Builds a reversible TWRP ZIP for `biscuit`, `radar`, and `radar_puffin` only. It preserves the original regular `/system/bin/ledcontroller`, replaces it with a regular shell entrypoint, and restores the original on uninstall. The `shairport-sync` binary itself is generic: all Echo-specific setup lives in that shell.
+- Turns off the inherited LED boot animation. `/data/shairport-sync.conf` is seeded on first boot (name from `ro.product.name`) and is authoritative thereafter: any Shairport Sync option can be set there. `general.model` (patch) picks the sender icon, e.g. `AirPort10,115` or `AudioAccessory5,1`.
+- Shairport patches live in `patches/shairport-sync/`: `android/` holds Bionic-only compatibility; the top-level series (`--with-echo-alsa`, `--with-echo-controls`, `general.model`, TinySVCmDNS AP2 registration, AP2 reverse-event backport) applies alone to pristine upstream, e.g. from Buildroot.
 
 ## Build and test
 
@@ -26,8 +27,9 @@ Install only from TWRP on an explicitly selected supported device. Full prerequi
 
 ## Validation status
 
-- `make test` verifies ZIP structure, payload hashes, device gating, fresh install, upgrade, legacy-package migration, uninstall, and `/data/AIRPLAY_NAME` preservation.
-- The ZIP has been installed and hash-verified through TWRP on Biscuit and Radar. Both start NQPTP and Shairport automatically after Wi-Fi is available; the ring is black at boot and PCM remains closed until playback.
+- `make test` verifies ZIP structure, device gating, fresh install, upgrade, uninstall, config seeding, and `/data/shairport-sync.conf` preservation.
+- **This layout (shell `ledcontroller`, `/data/shairport-sync.conf`, Android cancellation fixes, `general.model`) is not yet validated on hardware.** The results below are from the previous `airplayd` package.
+- That previous ZIP was installed and hash-verified through TWRP on Biscuit and Radar. Both start NQPTP and Shairport automatically after Wi-Fi is available; the ring is black at boot and PCM remains closed until playback.
 - Attended AirPlay playback, iPhone volume, physical controls, and LED behavior have been exercised on hardware. This does **not** establish multi-room synchronization or native HomePod stereo pairing.
 
 ## Limits and safety
@@ -35,7 +37,7 @@ Install only from TWRP on an explicitly selected supported device. Full prerequi
 - NQPTP is GPLv2; the combined Shairport/NQPTP/Rust distribution-license review remains open.
 - AirPlay 2 pairing persistence across service restarts has not been designed or validated.
 - Do not claim native HomePod-style stereo-pair support. Validate sender behavior and two-device timing before claiming multi-room support.
-- The installer never writes boot, recovery, cache, or persist, and preserves `/data/AIRPLAY_NAME` on upgrades and uninstall.
+- The installer never writes boot, recovery, cache, or persist, and never touches `/data` (config: `/data/shairport-sync.conf`, log: `/data/shairport-echo.log`).
 
 ## Credits
 
