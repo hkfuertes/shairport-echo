@@ -8,9 +8,9 @@ Experimental AirPlay 2 receiver for rooted Android ARMv7 Echo Dot Minimal Base d
 
 - Receives AirPlay 2 on the Echo's Android 7.1.2 ARMv7 system with TinySVCmDNS discovery and NQPTP timing. Shairport and NQPTP are fully static musl binaries (real `pthread_cancel`, no Bionic dependency or compatibility patches).
 - Uses the separate Rust `libecho_alsa.a` hardware library through Shairport's `audio_echo` backend: 48 kHz stereo S16_LE, 1,024-frame periods, four-period PCM buffer, mono speaker mixdown, and retry of the same period after an XRUN.
-- Runs a separate static `echo-volume-control` daemon for the LED ring and user-facing mixer controls. Shairport emits upstream metadata over localhost UDP; it no longer contains Echo button, LED, or AP2 reverse-control logic. With `--sync-with-mic-mute`, the physical privacy state is the speaker-amp kill switch; AirPlay playback never controls it. The audio backend retains PCM, routing and XRUN recovery.
+- Runs a separate static `echo-volume-control` daemon for the LED ring, ALSA control events, and mixer/privacy policy. Shairport emits upstream metadata over localhost UDP; it no longer contains Echo button, LED, or AP2 reverse-control logic. The shipped `--no-volume-buttons` deliberately leaves local `+/-` inactive. With `--sync-with-mic-mute`, the physical privacy state is the speaker-amp kill switch; AirPlay playback never controls it. The audio backend retains PCM, routing and XRUN recovery.
 - Builds a reversible TWRP ZIP for `biscuit`, `radar`, and `radar_puffin` only. It preserves the original regular `/system/bin/ledcontroller`, replaces it with a regular shell entrypoint, and restores the original on uninstall. The `shairport-sync` binary itself is generic: all Echo-specific setup lives in that shell.
-- Turns off the inherited LED boot animation. `/data/shairport-sync.conf` is seeded on first boot (name from `ro.product.name`) and is authoritative thereafter: any Shairport Sync option can be set there. `general.model` (patch) picks the sender icon, e.g. `AirPort10,115` or `AudioAccessory5,1`. `/data/shairport-echo.seed` restores kernel entropy on later boots, avoiding musl's `getrandom()` startup wait.
+- Turns off the inherited LED boot animation. `/data/shairport-sync.conf` is seeded on first boot (name from `ro.product.name`) and is authoritative thereafter: any Shairport Sync option can be set there. `general.model` (patch) picks the sender icon, e.g. `AirPort10,115`, `AudioAccessory5,1`, or `AudioAccessory1,1`. Before mDNS starts, `ledcontroller` sets a MAC-derived hostname (`shairport-<wlan0 MAC>`) so multiple Echos never collide as `localhost.local`. `/data/shairport-echo.seed` restores kernel entropy on later boots, avoiding musl's `getrandom()` startup wait.
 - Shairport patches live in `patches/shairport-sync/`: the three-patch series (`--with-echo-alsa` with external controls, `general.model`, TinySVCmDNS AP2 registration) applies alone to pristine upstream, e.g. from Buildroot.
 
 ## Build and test
@@ -27,9 +27,10 @@ Install only from TWRP on an explicitly selected supported device. Full prerequi
 
 ## Validation status
 
-- `make test` verifies ZIP structure, device gating, fresh install, upgrade, uninstall, config seeding, and `/data/shairport-sync.conf` preservation.
-- The shell `ledcontroller`, static musl binaries, config seeding, persisted entropy seed, and `general.model` were installed and booted on Biscuit. The new external control daemon, its metadata path and its microphone-mute amp gate have not yet been validated on hardware.
-- Earlier attended audio validation covered the previous embedded-controls build only. This does **not** establish multi-room synchronization or native HomePod stereo pairing.
+- `make test` verifies ZIP structure, device gating, fresh install, upgrade, uninstall, config seeding, MAC-derived hostname generation, and `/data/shairport-sync.conf` preservation.
+- Biscuit exercised AP2 realtime and buffered playback, metadata-driven volume/ring updates, and the physical privacy `0/1` speaker-amp gate.
+- Radar/Radar Puffin exercised a fresh TWRP install, AirPlay discovery and connection from iPhone and Mac alongside Biscuit, plus the `AudioAccessory1,1` advertisement. The dual-device test exposed and then verified the `localhost.local` collision fix.
+- This does **not** establish multi-room timing, pairing persistence across service restarts, or native HomePod stereo pairing.
 
 ## Limits and safety
 
