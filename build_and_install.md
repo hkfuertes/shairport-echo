@@ -7,15 +7,11 @@ The TWRP lifecycle has been validated on Biscuit and Radar/Radar Puffin. Attende
 ## Prerequisites
 
 - Docker.
-- The local Android build image `android-armv7-r27c-research:latest`.
+- Network access for the digest-pinned `rust:1.98-bookworm` base image and the checksum-verified musl.cc toolchain.
 - `adb` access to the rooted Biscuit or Radar Android ARMv7 target.
 - Permission to stop `ledcontroller` and make attended audio tests.
 
-The source snapshots, patches, Rust lockfile, dependency versions, and source checksums are tracked. The build is repeatable once the local base image exists, but is **not yet bootstrap-reproducible** on a clean machine because that base image is not built or digest-pinned in this repository.
-
-```sh
-docker image inspect android-armv7-r27c-research:latest >/dev/null
-```
+The source snapshots, patches, Rust lockfile, dependency versions, source checksums, base-image digest, and toolchain checksum are tracked.
 
 ## Build
 
@@ -27,11 +23,11 @@ docker build --pull=false --target shairport-artifact -t shairport-echo-shairpor
 docker build --pull=false --target nqptp-artifact -t shairport-echo-nqptp:local .
 ```
 
-`shairport-artifact` builds the Android API-24 ARMv7 Shairport binary and links the separate Rust `libecho_alsa.a` through `echo_alsa.h`. `nqptp-artifact` builds the matching Android NQPTP binary.
+`shairport-artifact` builds the fully static ARMv7 musl Shairport binary and links the separate Rust `libecho_alsa.a` through `echo_alsa.h`. `nqptp-artifact` builds the matching static musl NQPTP binary.
 
 ## TWRP ZIP
 
-Build the install and uninstall ZIPs from the complete API-24 ARMv7 artifact:
+Build the install and uninstall ZIPs from the complete static ARMv7 musl artifact:
 
 ```sh
 make          # build the complete ARMv7 artifact and both ZIPs
@@ -86,7 +82,7 @@ Optional: extract the standalone static library and header instead of the comple
 ```sh
 docker build --pull=false --target echo-alsa-build -t shairport-echo-alsa:local .
 id=$(docker create shairport-echo-alsa:local)
-docker cp "$id:/src/echo-alsa/target/armv7-linux-androideabi/release/libecho_alsa.a" ./libecho_alsa.a
+docker cp "$id:/src/echo-alsa/target/armv7-unknown-linux-musleabihf/release/libecho_alsa.a" ./libecho_alsa.a
 docker rm "$id"
 cp libs/echo-alsa/include/echo_alsa.h ./echo_alsa.h
 ```
