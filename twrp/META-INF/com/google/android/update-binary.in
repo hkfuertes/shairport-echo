@@ -3,29 +3,22 @@ set -eu
 
 MODE='@MODE@'
 VERSION='@VERSION@'
-MANIFEST_SHA256='@MANIFEST_SHA256@'
-
 OUTFD=${2:-}
 ZIP=${3:-}
 SYSTEM=${SHAIRPORT_ECHO_SYSTEM:-/system}
 TMPROOT=${SHAIRPORT_ECHO_TMPDIR:-/tmp}
 GETPROP=${SHAIRPORT_ECHO_GETPROP:-getprop}
 UNZIP=${SHAIRPORT_ECHO_UNZIP:-unzip}
-SHA256SUM=${SHAIRPORT_ECHO_SHA256SUM:-sha256sum}
 CHCON=${SHAIRPORT_ECHO_CHCON:-chcon}
 CHOWN=${SHAIRPORT_ECHO_CHOWN:-chown}
 
 SERVICE="$SYSTEM/bin/ledcontroller"
-BACKUP="$SYSTEM/bin/ledcontroller.airplayd-orig"
-ENTRYPOINT="$SYSTEM/bin/airplayd"
+BACKUP="$SYSTEM/bin/ledcontroller.shairport-echo-orig"
 RUNTIME="$SYSTEM/lib/shairport-echo"
 STATE_DIR="$SYSTEM/etc/shairport-echo"
 STATE="$STATE_DIR/installed"
-LEGACY_DIR="$SYSTEM/etc/airplayd"
-LEGACY_STATE="$LEGACY_DIR/installed"
 STAGE=
 FIRST_INSTALL=0
-ACTIVATED=0
 
 ui_print() {
   if [ -n "$OUTFD" ] && [ -e "/proc/self/fd/$OUTFD" ]; then
@@ -48,16 +41,8 @@ require_regular() {
   [ -f "$1" ] && [ ! -L "$1" ] || die "expected regular file: $1"
 }
 
-require_directory() {
-  [ -d "$1" ] && [ ! -L "$1" ] || die "expected directory: $1"
-}
-
-file_hash() {
-  "$SHA256SUM" "$1" | awk '{print $1}'
-}
-
 marker_value() {
-  sed -n "s/^$2=//p" "$1"
+  sed -n "s/^$2=//p" "$1" | sed -n '1p'
 }
 
 label_like_system() {
@@ -66,13 +51,14 @@ label_like_system() {
   "$CHCON" --reference="$reference" "$1" >/dev/null 2>&1 || true
 }
 
-payload_paths() {
+# path mode
+payload_files() {
   cat <<'EOF'
-system/bin/airplayd
-system/lib/shairport-echo/echo-alsa.conf
-system/lib/shairport-echo/echo-shairport-sync.conf
-system/lib/shairport-echo/nqptp
-system/lib/shairport-echo/shairport-sync
+system/lib/shairport-echo/nqptp 755
+system/lib/shairport-echo/shairport-sync 755
+system/lib/shairport-echo/shairport-sync.conf 644
+system/lib/shairport-echo/echo-alsa.conf 644
+system/bin/ledcontroller 755
 EOF
 }
 
@@ -100,77 +86,37 @@ verify_payload_stage() {
   mkdir -p "$STAGE"
   "$UNZIP" -o "$ZIP" -d "$STAGE" >/dev/null || die 'could not extract ZIP'
   [ -z "$(find "$STAGE" -type l -print)" ] || die 'installer ZIP contains a symlink'
-  require_regular "$STAGE/payload-manifest.sha256"
-  [ "$(file_hash "$STAGE/payload-manifest.sha256")" = "$MANIFEST_SHA256" ] ||
-    die 'payload manifest hash mismatch'
-  (
-    cd "$STAGE"
-    "$SHA256SUM" -c payload-manifest.sha256 >/dev/null
-  ) || die 'payload checksum mismatch'
-  actual=$(cd "$STAGE/payload" && find . -type f -print | sed 's|^\./||' | LC_ALL=C sort)
-  expected=$(payload_paths)
-  [ "$actual" = "$expected" ] || die 'unexpected payload layout'
+  payload_files | while read -r path mode; do
+    require_regular "$STAGE/payload/$path"
+  done
 }
 
 verify_ours() {
   require_regular "$STATE"
   [ "$(marker_value "$STATE" owner)" = shairport-echo ] || die 'unknown ownership marker'
   [ "$(marker_value "$STATE" device)" = "$product" ] || die 'marker belongs to another device'
-  base_hash=$(marker_value "$STATE" base_ledcontroller_sha256)
-  [ -n "$base_hash" ] || die 'marker lacks original ledcontroller hash'
   require_regular "$BACKUP"
-  [ "$(file_hash "$BACKUP")" = "$base_hash" ] || die 'saved ledcontroller is corrupt'
-  [ -L "$SERVICE" ] && [ "$(readlink "$SERVICE")" = airplayd ] ||
-    die 'ledcontroller is not the owned airplayd symlink'
-  for path in $(payload_paths); do
+  payload_files | while read -r path mode; do
     require_regular "$SYSTEM/${path#system/}"
   done
-  require_regular "$RUNTIME/installed-manifest.sha256"
-  [ "$(file_hash "$RUNTIME/installed-manifest.sha256")" = "$(marker_value "$STATE" installed_manifest_sha256)" ] ||
-    die 'installed manifest is corrupt'
-  (
-    cd "$SYSTEM"
-    "$SHA256SUM" -c "$RUNTIME/installed-manifest.sha256" >/dev/null
-  ) || die 'installed payload is corrupt'
-}
-
-verify_legacy() {
-  require_regular "$LEGACY_STATE"
-  [ "$(marker_value "$LEGACY_STATE" name)" = airplayd ] || die 'unknown legacy marker'
-  [ "$(marker_value "$LEGACY_STATE" device)" = "$product" ] || die 'legacy marker belongs to another device'
-  legacy_base_hash=$(marker_value "$LEGACY_STATE" base_ledcontroller_sha256)
-  legacy_entry_hash=$(marker_value "$LEGACY_STATE" airplayd_sha256)
-  [ -n "$legacy_base_hash" ] && [ -n "$legacy_entry_hash" ] || die 'legacy marker is incomplete'
-  require_regular "$BACKUP"
-  require_regular "$ENTRYPOINT"
-  [ "$(file_hash "$BACKUP")" = "$legacy_base_hash" ] || die 'legacy ledcontroller backup is corrupt'
-  [ "$(file_hash "$ENTRYPOINT")" = "$legacy_entry_hash" ] || die 'legacy airplayd is corrupt'
-  [ -L "$SERVICE" ] && [ "$(readlink "$SERVICE")" = airplayd ] ||
-    die 'legacy ledcontroller is not an airplayd symlink'
-  base_hash=$legacy_base_hash
 }
 
 prepare_install() {
   if [ -e "$STATE" ] || [ -L "$STATE" ]; then
     verify_ours
-  elif [ -e "$LEGACY_STATE" ] || [ -L "$LEGACY_STATE" ]; then
-    is_absent "$STATE_DIR" || die 'new ownership directory already exists'
-    verify_legacy
   else
     FIRST_INSTALL=1
     is_absent "$BACKUP" || die 'refusing existing ledcontroller backup'
-    is_absent "$ENTRYPOINT" || die 'refusing existing airplayd entrypoint'
     is_absent "$RUNTIME" || die 'refusing existing runtime directory'
     is_absent "$STATE_DIR" || die 'refusing existing ownership directory'
     require_regular "$SERVICE"
-    base_hash=$(file_hash "$SERVICE")
   fi
 }
 
 ensure_directory() {
   path=$1
   if [ -e "$path" ] || [ -L "$path" ]; then
-    require_directory "$path"
+    [ -d "$path" ] && [ ! -L "$path" ] || die "expected directory: $path"
   else
     mkdir -p "$path" || die "could not create $path"
     chmod 755 "$path" || die "could not chmod $path"
@@ -182,10 +128,10 @@ ensure_directory() {
 install_file() {
   relative=$1
   mode=$2
-  owner=$3
   source="$STAGE/payload/$relative"
   destination="$SYSTEM/${relative#system/}"
-  require_regular "$source"
+  owner=0:2000
+  [ "$mode" = 755 ] || owner=0:0
   ensure_directory "$(dirname "$destination")"
   temporary="$destination.shairport-echo-new"
   rm -f "$temporary"
@@ -202,29 +148,16 @@ preserve_original() {
   chmod 755 "$temporary" || die 'could not chmod saved ledcontroller'
   "$CHOWN" 0:2000 "$temporary" || die 'could not chown saved ledcontroller'
   label_like_system "$temporary"
-  [ "$(file_hash "$temporary")" = "$base_hash" ] || die 'saved ledcontroller hash mismatch'
   mv "$temporary" "$BACKUP" || die 'could not activate ledcontroller backup'
 }
 
 write_state() {
-  manifest="$RUNTIME/installed-manifest.sha256"
-  temporary="$manifest.shairport-echo-new"
-  sed 's|  payload/system/|  |' "$STAGE/payload-manifest.sha256" >"$temporary" ||
-    die 'could not create installed manifest'
-  chmod 644 "$temporary" || die 'could not chmod installed manifest'
-  "$CHOWN" 0:0 "$temporary" || die 'could not chown installed manifest'
-  label_like_system "$temporary"
-  installed_manifest_hash=$(file_hash "$temporary")
-  mv -f "$temporary" "$manifest" || die 'could not activate installed manifest'
-
   ensure_directory "$STATE_DIR"
   temporary="$STATE.shairport-echo-new"
   cat >"$temporary" <<EOF
 owner=shairport-echo
 version=$VERSION
 device=$product
-base_ledcontroller_sha256=$base_hash
-installed_manifest_sha256=$installed_manifest_hash
 EOF
   chmod 644 "$temporary" || die 'could not chmod ownership marker'
   "$CHOWN" 0:0 "$temporary" || die 'could not chown ownership marker'
@@ -232,73 +165,40 @@ EOF
   mv -f "$temporary" "$STATE" || die 'could not activate ownership marker'
 }
 
-activate() {
-  temporary="$SERVICE.shairport-echo-new"
-  rm -f "$temporary"
-  ln -s airplayd "$temporary" || die 'could not create ledcontroller symlink'
-  mv -f "$temporary" "$SERVICE" || die 'could not activate ledcontroller symlink'
-  ACTIVATED=1
-}
-
 install() {
   prepare_install
   verify_payload_stage
-  payload_kb=$((($(wc -c < "$STAGE/payload-manifest.sha256") + 1023) / 1024))
-  for path in $(payload_paths); do
-    payload_kb=$((payload_kb + ($(wc -c < "$STAGE/payload/$path") + 1023) / 1024))
-  done
-  available=${SHAIRPORT_ECHO_FREE_KB:-$(df -k "$SYSTEM" | awk 'END {print $(NF-2)}')}
-  case "$available" in ''|*[!0-9]*) die 'could not determine free system space' ;; esac
-  [ "$available" -ge $((payload_kb + 2048)) ] ||
-    die "insufficient system space: need $((payload_kb + 2048)) KiB, have $available KiB"
-
   if [ "$FIRST_INSTALL" -eq 1 ]; then
     preserve_original
   fi
-  ensure_directory "$RUNTIME"
-  install_file system/lib/shairport-echo/nqptp 755 0:2000
-  install_file system/lib/shairport-echo/shairport-sync 755 0:2000
-  install_file system/lib/shairport-echo/echo-alsa.conf 644 0:0
-  install_file system/lib/shairport-echo/echo-shairport-sync.conf 644 0:0
-  install_file system/bin/airplayd 755 0:2000
+  # ledcontroller is last in payload_files: the service switches only once the runtime is in place.
+  payload_files | while read -r path mode; do
+    install_file "$path" "$mode"
+  done
   write_state
-  activate
   verify_ours
-
-  if [ -e "$LEGACY_STATE" ] || [ -L "$LEGACY_STATE" ]; then
-    rm -f "$LEGACY_STATE" || die 'could not retire legacy marker'
-    rmdir "$LEGACY_DIR" 2>/dev/null || true
-  fi
-  ui_print "Installed shairport-echo $VERSION for $product; reboot to start it."
+  ui_print "Installed shairport-echo $VERSION for $product; restart or reboot to start it."
 }
 
 uninstall() {
   verify_ours
   mv -f "$BACKUP" "$SERVICE" || die 'could not restore ledcontroller'
   require_regular "$SERVICE"
-  [ "$(file_hash "$SERVICE")" = "$(marker_value "$STATE" base_ledcontroller_sha256)" ] ||
-    die 'restored ledcontroller hash mismatch'
-  rm -f "$ENTRYPOINT" || die 'could not remove airplayd'
   rm -rf "$RUNTIME" || die 'could not remove runtime files'
   rm -f "$STATE" || die 'could not remove ownership marker'
   rmdir "$STATE_DIR" || die 'could not remove ownership directory'
-  ui_print 'Uninstalled shairport-echo; /data/AIRPLAY_NAME was preserved.'
+  ui_print 'Uninstalled shairport-echo; /data/shairport-sync.conf was preserved.'
 }
 
 finish() {
   status=$?
   trap - EXIT HUP INT TERM
-  rm -rf "$STAGE" \
-    "$SERVICE.shairport-echo-new" "$BACKUP.shairport-echo-new" \
-    "$ENTRYPOINT.shairport-echo-new" "$RUNTIME/installed-manifest.sha256.shairport-echo-new" \
+  rm -rf "$STAGE" "$SERVICE.shairport-echo-new" "$BACKUP.shairport-echo-new" \
     "$STATE.shairport-echo-new" 2>/dev/null || true
   if [ "$status" -ne 0 ] && [ "$FIRST_INSTALL" -eq 1 ]; then
-    if [ "$ACTIVATED" -eq 1 ] && [ -f "$BACKUP" ] && [ ! -L "$BACKUP" ]; then
+    if [ -f "$BACKUP" ] && [ ! -L "$BACKUP" ]; then
       mv -f "$BACKUP" "$SERVICE" 2>/dev/null || true
-    else
-      rm -f "$BACKUP" 2>/dev/null || true
     fi
-    rm -f "$ENTRYPOINT" 2>/dev/null || true
     rm -rf "$RUNTIME" "$STATE_DIR" 2>/dev/null || true
   fi
   sync 2>/dev/null || true
@@ -307,7 +207,7 @@ finish() {
 trap finish EXIT HUP INT TERM
 
 ensure_system
-for tool in "$GETPROP" "$UNZIP" "$SHA256SUM" "$CHCON" "$CHOWN"; do
+for tool in "$GETPROP" "$UNZIP" "$CHOWN"; do
   command -v "$tool" >/dev/null 2>&1 || die "missing required tool: $tool"
 done
 reported_product=$($GETPROP ro.product.device)
@@ -317,7 +217,6 @@ case "$abi" in
   armeabi-v7a|armeabi-v7a,*) ;;
   *) die "unsupported ro.product.cpu.abi: ${abi:-empty}" ;;
 esac
-base_hash=
 
 case "$MODE" in
   install) install ;;

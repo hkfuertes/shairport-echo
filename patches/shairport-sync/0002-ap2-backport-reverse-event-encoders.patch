@@ -1,11 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Miguel Fuertes <hkfuertes@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 09:16:39 +0200
+Subject: [PATCH 2/5] ap2: backport reverse event encoders
+
+Backport of the AP2 modern media remote command and unit volume
+notification encoders.
+
+Upstream: backport of mikebrady/shairport-sync@441988ce9763062b3fe95c9fd9971ddd457e2466
+(development branch, 5.6-dev); drop when rebasing onto 5.6
+Signed-off-by: Miguel Fuertes <hkfuertes@users.noreply.github.com>
+---
+ ap2_event_message_handler.c | 109 ++++++++++++++++++++++++++++++++++++
+ 1 file changed, 109 insertions(+)
+
 diff --git a/ap2_event_message_handler.c b/ap2_event_message_handler.c
 index 457416a..ea42dfe 100644
 --- a/ap2_event_message_handler.c
 +++ b/ap2_event_message_handler.c
-@@ -32,0 +33,2 @@
+@@ -30,6 +30,8 @@
+ #include "utilities/generate_random_uuid.h"
+ #include "utilities/structured_buffer.h"
+ 
 +#include <stdio.h>
 +
-@@ -139,0 +142,107 @@ ssize_t ap2_event_send_update_info(rtsp_conn_info *conn) {
+ void decodeAndLogPlist(plist_t plist_to_log) {
+   if (plist_to_log != NULL) {
+     char *plist_as_string = plist_as_xml_text(plist_to_log);
+@@ -137,3 +139,110 @@ ssize_t ap2_event_send_update_info(rtsp_conn_info *conn) {
+   }
+   return result;
+ }
 +
 +// These AP2 reverse-event encoders are derived from Shairport Sync upstream
 +// commit 441988ce9763062b3fe95c9fd9971ddd457e2466. Keep them here because this

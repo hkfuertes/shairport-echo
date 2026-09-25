@@ -40,11 +40,11 @@ make test     # host-only ZIP/install/upgrade/uninstall regression
 
 `make zip` builds only; `VERSION=0.1.1 make` selects a different ZIP version.
 
-Artifacts are written to `out/` with SHA-256 sidecars. The host-only test validates ZIP layout, checksums, supported-device filtering, fresh install, upgrade, migration from the previous `airplayd` package, uninstall, and preservation of `/data/AIRPLAY_NAME`.
+Artifacts are written to `out/`. The host-only test validates ZIP layout, supported-device filtering, fresh install, upgrade, uninstall, config seeding, and preservation of `/data/shairport-sync.conf`.
 
-The installer accepts only `biscuit`, `radar`, and `radar_puffin` with `armeabi-v7a`. It preserves the original regular `/system/bin/ledcontroller`, installs `/system/bin/airplayd`, and activates the existing init contract with the relative symlink `ledcontroller -> airplayd`. It never writes boot, recovery, cache, persist, or `/data`; uninstall restores the exact saved `ledcontroller` and retains the AirPlay name.
+The installer accepts only `biscuit`, `radar`, and `radar_puffin` with `armeabi-v7a`. It saves the original regular `/system/bin/ledcontroller` as `ledcontroller.shairport-echo-orig`, installs the runtime in `/system/lib/shairport-echo/`, and replaces `ledcontroller` with a regular shell entrypoint. It never writes boot, recovery, cache, persist, or `/data`; uninstall restores the saved `ledcontroller` and keeps `/data/shairport-sync.conf`.
 
-On first Android boot, `airplayd` turns off the inherited LED boot animation, then creates `/data/AIRPLAY_NAME` from `ro.product.name`. Thereafter that file is authoritative. To change it, edit the file and restart the existing `ledcontroller` service.
+On first Android boot, `ledcontroller` turns off the inherited LED boot animation, then seeds `/data/shairport-sync.conf` with `name` from `ro.product.name`. Thereafter that file is authoritative: edit the name or any other Shairport Sync option and restart the `ledcontroller` service.
 
 Install only from TWRP on an explicitly selected device:
 

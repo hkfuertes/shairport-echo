@@ -1,3 +1,21 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Miguel Fuertes <hkfuertes@users.noreply.github.com>
+Date: Fri, 25 Sep 2026 09:16:39 +0200
+Subject: [PATCH 4/5] echo: add --with-echo-alsa output backend
+
+Optional output backend "echo" using libecho_alsa.a (echo-libs): 48 kHz S16_LE,
+1024-frame periods, XRUN retry and hardware volume. Off unless configured.
+
+Upstream: not applicable (Amazon Echo hardware only)
+Signed-off-by: Miguel Fuertes <hkfuertes@users.noreply.github.com>
+---
+ Makefile.am  |   5 +
+ audio.c      |   6 +
+ audio_echo.c | 319 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ configure.ac |   7 ++
+ 4 files changed, 337 insertions(+)
+ create mode 100644 audio_echo.c
+
 diff --git a/Makefile.am b/Makefile.am
 index 96bf0cb..6545bcd 100644
 --- a/Makefile.am
