@@ -56,6 +56,7 @@ payload_files() {
   cat <<'EOF'
 system/lib/shairport-echo/nqptp 755
 system/lib/shairport-echo/entropy-seed 755
+system/lib/shairport-echo/echo-volume-control 755
 system/lib/shairport-echo/shairport-sync 755
 system/lib/shairport-echo/shairport-sync.conf 644
 system/lib/shairport-echo/echo-alsa.conf 644

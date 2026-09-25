@@ -9,13 +9,17 @@ _Static_assert(offsetof(echo_alsa_stats_t, delay_frames) == 24, "delay_frames of
 static int (*const open_fn)(echo_alsa_t **) = echo_alsa_open;
 static int (*const write_fn)(echo_alsa_t *, const int16_t *, uint32_t, uint32_t *) =
     echo_alsa_write_s16le;
+static int (*const external_controls_fn)(echo_alsa_t *, int) =
+    echo_alsa_set_external_controls;
 static int (*const stats_fn)(echo_alsa_t *, echo_alsa_stats_t *) = echo_alsa_stats;
 static int (*const get_volume_fn)(echo_alsa_t *, double *) = echo_alsa_get_volume_db;
 static int (*const read_system_volume_fn)(double *) = echo_alsa_read_system_volume_db;
+static int (*const set_system_volume_fn)(double, double *) = echo_alsa_set_system_volume_db;
 static int (*const adjust_volume_fn)(echo_alsa_t *, int, double *) = echo_alsa_adjust_volume_db;
 static int (*const adjust_system_volume_fn)(int, double *) = echo_alsa_adjust_system_volume_db;
 
 int main(void) {
-  return open_fn == 0 || write_fn == 0 || stats_fn == 0 || get_volume_fn == 0 ||
-         read_system_volume_fn == 0 || adjust_volume_fn == 0 || adjust_system_volume_fn == 0;
+  return open_fn == 0 || write_fn == 0 || external_controls_fn == 0 || stats_fn == 0 || get_volume_fn == 0 ||
+         read_system_volume_fn == 0 || set_system_volume_fn == 0 ||
+         adjust_volume_fn == 0 || adjust_system_volume_fn == 0;
 }

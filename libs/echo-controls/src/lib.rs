@@ -7,7 +7,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{self, Read},
     mem::size_of,
-    os::unix::fs::OpenOptionsExt,
+    os::{fd::{AsRawFd, RawFd}, unix::fs::OpenOptionsExt},
     path::{Path, PathBuf},
 };
 
@@ -187,6 +187,10 @@ impl ButtonReader {
                 .custom_flags(libc::O_NONBLOCK)
                 .open(path)?,
         })
+    }
+
+    pub fn as_raw_fd(&self) -> RawFd {
+        self.file.as_raw_fd()
     }
 
     /// Returns `None` when a nonblocking reader has no pending key event.

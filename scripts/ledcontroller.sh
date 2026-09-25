@@ -16,6 +16,7 @@ umount_cmd=${UMOUNT:-umount}
 sleep_cmd=${SLEEP:-sleep}
 nqptp_pid=
 shairport_pid=
+volume_control_pid=
 made_shm=0
 
 fail() {
@@ -60,8 +61,10 @@ stop_child() {
 
 cleanup() {
   trap - EXIT HUP INT TERM
+  "$root/echo-volume-control" --amp-off >/dev/null 2>&1 || true
   stop_child "$shairport_pid"
   stop_child "$nqptp_pid"
+  stop_child "$volume_control_pid"
   if [ "$made_shm" -eq 1 ]; then
     "$umount_cmd" /dev/shm 2>/dev/null || true
     rmdir /dev/shm 2>/dev/null || true
@@ -80,6 +83,7 @@ trap 'exit 0' HUP INT TERM
 
 [ -x "$root/nqptp" ] || fail "missing $root/nqptp"
 [ -x "$root/shairport-sync" ] || fail "missing $root/shairport-sync"
+[ -x "$root/echo-volume-control" ] || fail "missing $root/echo-volume-control"
 
 # No hwrng and no saved entropy: without this, getrandom() in the crypto libs
 # blocks for minutes after boot. Blocks once on the very first boot.
@@ -102,6 +106,14 @@ else
 fi
 
 : >"$log"
+"$root/echo-volume-control" --no-volume-buttons --sync-with-mic-mute --metadata-port 45678 >>"$log" 2>&1 &
+volume_control_pid=$!
+"$sleep_cmd" 1
+if ! kill -0 "$volume_control_pid" 2>/dev/null; then
+  cat "$log" >&2 || true
+  fail 'echo-volume-control exited during startup'
+fi
+
 "$root/nqptp" >>"$log" 2>&1 &
 nqptp_pid=$!
 "$sleep_cmd" 1
@@ -120,7 +132,7 @@ if ! kill -0 "$shairport_pid" 2>/dev/null; then
   fail 'shairport-sync exited during startup'
 fi
 
-while kill -0 "$nqptp_pid" 2>/dev/null && kill -0 "$shairport_pid" 2>/dev/null; do
+while kill -0 "$volume_control_pid" 2>/dev/null && kill -0 "$nqptp_pid" 2>/dev/null && kill -0 "$shairport_pid" 2>/dev/null; do
   "$sleep_cmd" 1
 done
 fail 'receiver child exited'

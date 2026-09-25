@@ -36,6 +36,7 @@ struct EchoAlsaDevice {
     mixer: Mixer,
     volume_db: f32,
     muted: bool,
+    external_controls: bool,
     started: bool,
     frames_sent_to_dac: u64,
     stats_discontinuity: bool,
@@ -51,6 +52,7 @@ impl EchoAlsaDevice {
             mixer,
             volume_db,
             muted: false,
+            external_controls: false,
             started: false,
             frames_sent_to_dac: 0,
             stats_discontinuity: true,
@@ -74,12 +76,17 @@ impl EchoAlsaDevice {
 
     fn start(&mut self) -> io::Result<()> {
         self.pcm.prepare()?;
-        if let Err(error) = self
-            .mixer
-            .configure_output()
-            .and_then(|_| self.apply_volume())
-        {
-            let _ = self.mixer.disable_amp();
+        let setup = if self.external_controls {
+            self.mixer.configure_output_without_amp()
+        } else {
+            self.mixer
+                .configure_output()
+                .and_then(|_| self.apply_volume())
+        };
+        if let Err(error) = setup {
+            if !self.external_controls {
+                let _ = self.mixer.disable_amp();
+            }
             return Err(error);
         }
         self.started = true;
@@ -93,10 +100,22 @@ impl EchoAlsaDevice {
         } else {
             Ok(())
         };
-        let mixer_result = self.mixer.disable_amp();
+        let mixer_result = if self.external_controls {
+            Ok(())
+        } else {
+            self.mixer.disable_amp()
+        };
         self.started = false;
         self.stats_discontinuity = true;
         pcm_result.and(mixer_result)
+    }
+
+    fn set_external_controls(&mut self, enabled: bool) -> io::Result<()> {
+        if self.started {
+            return Err(io::Error::from_raw_os_error(libc::EBUSY));
+        }
+        self.external_controls = enabled;
+        Ok(())
     }
 
     fn flush(&mut self) -> io::Result<()> {
@@ -163,7 +182,7 @@ impl EchoAlsaDevice {
             ));
         }
         self.volume_db = volume_db;
-        if self.started && !self.muted {
+        if self.started && !self.muted && !self.external_controls {
             self.mixer.set_db(self.volume_db)?;
         }
         Ok(())
@@ -171,7 +190,7 @@ impl EchoAlsaDevice {
 
     fn set_mute(&mut self, muted: bool) -> io::Result<()> {
         self.muted = muted;
-        if self.started {
+        if self.started && !self.external_controls {
             self.apply_volume()?;
         }
         Ok(())
@@ -343,6 +362,14 @@ pub extern "C" fn echo_alsa_get_config(
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn echo_alsa_set_external_controls(
+    handle: *mut EchoAlsaHandle,
+    enabled: c_int,
+) -> c_int {
+    with_device(handle, |device| device.set_external_controls(enabled != 0))
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn echo_alsa_start(handle: *mut EchoAlsaHandle) -> c_int {
     with_device(handle, EchoAlsaDevice::start)
 }
@@ -454,6 +481,20 @@ pub extern "C" fn echo_alsa_read_system_volume_db(out: *mut f64) -> c_int {
 }
 
 #[unsafe(no_mangle)]
+pub extern "C" fn echo_alsa_set_system_volume_db(volume_db: f64, out: *mut f64) -> c_int {
+    if out.is_null() || !volume_db.is_finite() || !(volume_db as f32).is_finite() {
+        return -libc::EINVAL;
+    }
+    ffi_status(|| {
+        let mut mixer = Mixer::open()?;
+        mixer.set_db(volume_db as f32)?;
+        // SAFETY: out was checked for null and belongs to the C caller.
+        unsafe { *out = f64::from(current_volume_db(mixer.volume()?)) };
+        Ok(())
+    })
+}
+
+#[unsafe(no_mangle)]
 pub extern "C" fn echo_alsa_adjust_system_volume_db(steps: c_int, out: *mut f64) -> c_int {
     if out.is_null() {
         return -libc::EINVAL;
@@ -513,6 +554,16 @@ mod tests {
     #[test]
     fn status_is_a_negative_errno() {
         assert_eq!(error_status(&invalid_argument()), -libc::EINVAL);
+    }
+
+    #[test]
+    fn system_volume_rejects_invalid_arguments_before_opening_hardware() {
+        assert_eq!(echo_alsa_set_system_volume_db(-12.5, ptr::null_mut()), -libc::EINVAL);
+        for invalid in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::MAX] {
+            let mut unchanged = 123.0;
+            assert_eq!(echo_alsa_set_system_volume_db(invalid, &mut unchanged), -libc::EINVAL);
+            assert_eq!(unchanged, 123.0);
+        }
     }
 
     #[test]

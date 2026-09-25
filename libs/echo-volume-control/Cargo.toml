@@ -1,0 +1,15 @@
+[package]
+name = "echo-volume-control"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.98"
+publish = false
+description = "Standalone Echo volume, amplifier and LED-ring controller"
+
+[dependencies]
+echo-alsa = { path = "../echo-alsa" }
+echo-controls = { path = "../echo-controls" }
+libc = "0.2"
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
