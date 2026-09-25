@@ -1,8 +1,8 @@
 # Build, TWRP, and manual development install
 
-This covers the recoverable TWRP ZIP for rooted Biscuit and Radar devices, plus the older manual development path.
+This covers the recoverable TWRP ZIP for rooted Biscuit and Radar devices, plus the legacy manual A/B path.
 
-The TWRP lifecycle has been validated on Biscuit and Radar/Radar Puffin. Attended audio quality is validated on Biscuit and basic AirPlay playback has been observed on Radar; before changing a device's hardware configuration, run a read-only preflight and verify its PCM node, ALSA controls, and `ledcontroller` ownership.
+The TWRP lifecycle and installed receiver have been validated on Biscuit and Radar/Radar Puffin. Before changing a device's hardware configuration, run a read-only preflight and verify its PCM node, ALSA controls, and `ledcontroller` ownership.
 
 ## Prerequisites
 
@@ -40,7 +40,7 @@ Artifacts are written to `out/`. The host-only test validates ZIP layout, suppor
 
 The installer accepts only `biscuit`, `radar`, and `radar_puffin` with `armeabi-v7a`. It saves the original regular `/system/bin/ledcontroller` as `ledcontroller.shairport-echo-orig`, installs the runtime in `/system/lib/shairport-echo/`, and replaces `ledcontroller` with a regular shell entrypoint. It never writes boot, recovery, cache, persist, or `/data`; uninstall restores the saved `ledcontroller` and keeps `/data/shairport-sync.conf`.
 
-On first Android boot, `ledcontroller` turns off the inherited LED boot animation, then seeds `/data/shairport-sync.conf` with `name` from `ro.product.name`. It starts `echo-volume-control` before NQPTP and Shairport, with local UDP metadata on `127.0.0.1:45678`, `--no-volume-buttons`, and `--sync-with-mic-mute`. Metadata drives only volume and the ring; the physical privacy state alone gates the speaker amp. It also persists a root-only `/data/shairport-echo.seed`: the next boot feeds it into the Linux 3.18 random pool before starting crypto libraries, avoiding a 60-second musl `getrandom()` wait. Thereafter the config file is authoritative: edit the name or any other Shairport Sync option and restart the `ledcontroller` service.
+On first Android boot, `ledcontroller` turns off the inherited LED boot animation, then seeds `/data/shairport-sync.conf` with `name` from `ro.product.name`. It waits for `wlan0`, sets the unique `shairport-<wlan0 MAC>` hostname before TinySVCmDNS starts, then starts `echo-volume-control` before NQPTP and Shairport. This prevents two Echos from advertising the same `localhost.local` target. The daemon uses local UDP metadata on `127.0.0.1:45678`, `--no-volume-buttons`, and `--sync-with-mic-mute`: metadata drives only volume and the ring; physical privacy alone gates the speaker amp. It also persists a root-only `/data/shairport-echo.seed`; the first boot after a fresh flash can wait minutes for kernel entropy, while later boots seed the Linux 3.18 random pool before crypto starts. Thereafter the config file is authoritative: edit `general.name`, optional `general.model`, or other Shairport settings and restart `ledcontroller`.
 
 Install only from TWRP on an explicitly selected device:
 
@@ -54,7 +54,11 @@ adb -s "$serial" reboot
 
 The ZIP is a device-test artifact until the combined Shairport/NQPTP/Rust distribution-license review is complete.
 
-## Extract artifacts
+## Legacy manual A/B path
+
+This path is only for researching upstream ALSA versus `audio_echo`. It does not start `echo-volume-control`, apply the MAC-derived hostname fix, or reproduce the packaged service. Never run it alongside the installed `ledcontroller`.
+
+### Extract artifacts
 
 ```sh
 set -eu
@@ -146,7 +150,7 @@ The upstream ALSA mode requires the attended route helper before audible playbac
 adb -s "$serial" shell "$root/echo-route on"
 ```
 
-The Echo backend configures PCM/routing when audio first arrives. `echo-volume-control` owns volume, speaker amplification and the ring through upstream local metadata; it deliberately sends no device-to-iPhone AP2 controls. This new split still needs dedicated hardware validation.
+The Echo backend configures PCM/routing when audio first arrives. The packaged receiver's `echo-volume-control` owns volume, speaker amplification, and the ring; this legacy A/B path does not. Never run `echo-route on` while the packaged `ledcontroller` is active: it writes the amplifier directly and bypasses the physical-privacy kill switch.
 
 Read-only checks:
 

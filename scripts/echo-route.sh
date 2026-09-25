@@ -1,5 +1,6 @@
 #!/system/bin/sh
-# Run `on` only for an attended playback test. `off` is the safe idle state.
+# Legacy upstream-ALSA experiment only. Never run `on` with packaged ledcontroller:
+# it writes the amplifier directly and bypasses the physical-privacy kill switch.
 set -eu
 
 mixer=/system/bin/tinymix

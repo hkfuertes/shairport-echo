@@ -9,13 +9,13 @@ LED-ring and physical-input support for ARMv7 Echo Dot Minimal Base devices runn
 - Evdev button reading with runtime-correct `input_event` layout.
 - `controls-preflight`, `led_probe`, and the ARMv7 input-layout C probe.
 
-## Shairport port status
+## Receiver integration
 
-This crate stays separate from Shairport Sync, but the `audio_echo` controls bridge links its static archive.
+This crate stays separate from Shairport Sync; it is not linked into `audio_echo`. The packaged `echo-volume-control` service links it directly for ring and input access.
 
-It also builds `libecho_controls.a` and ships `include/echo_controls.h`. The C ABI uses caller-owned opaque handles, returns negative errno values, writes no LED state on ring open/close, and supports blocking or `-EAGAIN` nonblocking button reads. It deliberately supplies hardware access only: a companion C program owns button/LED policy and must not create a second volume state.
+It also builds `libecho_controls.a` and ships `include/echo_controls.h`. The C ABI uses caller-owned opaque handles, returns negative errno values, writes no LED state on ring open/close, and supports blocking or `-EAGAIN` nonblocking button reads. It deliberately supplies hardware access only: a companion service owns policy and must not create a second volume state.
 
-The bridge owns button/LED policy and must keep volume ownership with the selected system output path rather than creating a second gain state.
+The shipped service uses `--no-volume-buttons`; local `+/-` are deliberately inactive until device-to-sender synchronization has a supported AP2 control path.
 
 ## Target safety
 

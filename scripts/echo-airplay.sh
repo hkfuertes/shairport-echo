@@ -1,5 +1,6 @@
 #!/system/bin/sh
-# Starts the AirPlay control plane only. It never enables the Echo speaker route.
+# Legacy manual A/B launcher only; the installed receiver uses ledcontroller instead.
+# It does not start echo-volume-control or apply the unique mDNS hostname.
 set -eu
 
 root=${SHAIRPORT_ECHO_ROOT:-$(dirname "$0")}

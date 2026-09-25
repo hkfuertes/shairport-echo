@@ -18,6 +18,13 @@ printf '%s\n' "$TEST_PRODUCT"
 EOF
 chmod 755 "$tmp/getprop"
 
+cat >"$tmp/cat" <<'EOF'
+#!/bin/sh
+[ "$1" = /sys/class/net/wlan0/address ] || exit 1
+printf '%s\n' "$TEST_MAC"
+EOF
+chmod 755 "$tmp/cat"
+
 ring=$tmp/ring
 mkdir "$ring"
 printf '1\n' >"$ring/boot_animation"
@@ -26,15 +33,19 @@ config=$tmp/shairport-sync.conf
 
 run() {
   TEST_PRODUCT=$1 \
+  TEST_MAC=${2:-c4:95:00:1e:37:3f} \
   SHAIRPORT_ECHO_DRY_RUN=1 \
   SHAIRPORT_ECHO_ROOT="$root/config" \
   SHAIRPORT_ECHO_DATA="$tmp" \
   ECHO_RING_PATH="$ring" \
   GETPROP="$tmp/getprop" \
+  CAT_CMD="$tmp/cat" \
   sh "$root/scripts/ledcontroller.sh"
 }
 
-[ "$(run biscuit_minimal)" = "config=$config" ] || fail 'dry run did not report the config'
+output=$(run biscuit_minimal)
+printf '%s\n' "$output" | grep -Fqx "config=$config" || fail 'dry run did not report the config'
+printf '%s\n' "$output" | grep -Fqx 'hostname=shairport-c495001e373f' || fail 'hostname was not derived from the wlan0 MAC'
 grep -Fqx '  name = "biscuit_minimal";' "$config" || fail 'name was not seeded from ro.product.name'
 grep -Fqx '  socket_port = 45678;' "$config" || fail 'metadata port was not seeded'
 grep -Fqx '  include_cover_art = "no";' "$config" || fail 'metadata cover-art setting was not seeded'

@@ -14,6 +14,9 @@ ip_cmd=${IP:-ip}
 mount_cmd=${MOUNT:-mount}
 umount_cmd=${UMOUNT:-umount}
 sleep_cmd=${SLEEP:-sleep}
+hostname_cmd=${HOSTNAME_CMD:-hostname}
+cat_cmd=${CAT_CMD:-cat}
+tr_cmd=${TR_CMD:-tr}
 nqptp_pid=
 shairport_pid=
 volume_control_pid=
@@ -31,6 +34,17 @@ default_name() {
     ''|*[!A-Za-z0-9_.\ -]*) name=Echo ;;
   esac
   printf '%s\n' "$name"
+}
+
+mdns_hostname() {
+  mac=$("$cat_cmd" /sys/class/net/wlan0/address 2>/dev/null | "$tr_cmd" -cd '[:xdigit:]')
+  [ "${#mac}" -eq 12 ] || return 1
+  printf 'shairport-%s\n' "$mac"
+}
+
+set_mdns_hostname() {
+  host=$(mdns_hostname) || fail 'cannot derive a unique mDNS hostname from wlan0'
+  "$hostname_cmd" "$host" || fail "cannot set mDNS hostname $host"
 }
 
 seed_config() {
@@ -74,7 +88,9 @@ cleanup() {
 turn_ring_off
 seed_config
 if [ "${SHAIRPORT_ECHO_DRY_RUN:-0}" = 1 ]; then
+  host=$(mdns_hostname) || fail 'cannot derive a unique mDNS hostname from wlan0'
   printf 'config=%s\n' "$config"
+  printf 'hostname=%s\n' "$host"
   exit 0
 fi
 
@@ -93,6 +109,7 @@ trap 'exit 0' HUP INT TERM
 while ! "$ip_cmd" -4 addr show dev wlan0 2>/dev/null | grep -q 'inet '; do
   "$sleep_cmd" 1
 done
+set_mdns_hostname
 
 if [ -e /dev/shm ]; then
   [ -d /dev/shm ] || fail '/dev/shm is not a directory'
