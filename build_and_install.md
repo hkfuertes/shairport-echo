@@ -7,11 +7,11 @@ The TWRP lifecycle and installed receiver have been validated on Biscuit and Rad
 ## Prerequisites
 
 - Docker.
-- Network access for the digest-pinned `rust:1.98-bookworm` base image and the checksum-verified musl.cc toolchain.
+- Network access for the digest-pinned `debian:bookworm` base image and the checksum-verified musl.cc toolchain.
 - `adb` access to the rooted Biscuit or Radar Android ARMv7 target.
 - Permission to stop `ledcontroller` and make attended audio tests.
 
-The source snapshots, patches, Rust lockfile, dependency versions, source checksums, base-image digest, and toolchain checksum are tracked.
+The patch series, dependency versions, upstream archive commits/checksums, base-image digest, toolchain checksum, and Echo artifact revision are tracked.
 
 ## Build
 
@@ -23,7 +23,7 @@ docker build --pull=false --target shairport-artifact -t shairport-echo-shairpor
 docker build --pull=false --target nqptp-artifact -t shairport-echo-nqptp:local .
 ```
 
-`shairport-artifact` builds the fully static ARMv7 musl Shairport binary and links the separate Rust `libecho_alsa.a` through `echo_alsa.h`. `nqptp-artifact` builds the matching static musl NQPTP binary. The complete TWRP artifact also contains `echo-volume-control`, the separate static mixer/LED daemon.
+`shairport-artifact` builds the fully static ARMv7 musl Shairport binary and links vendored `libs/libecho_alsa.a` through `libs/echo_alsa.h`. `nqptp-artifact` builds the matching static musl NQPTP binary. The complete TWRP artifact also contains vendored `echo-volume-control`, the separate static mixer/LED daemon.
 
 ## TWRP ZIP
 
@@ -81,15 +81,14 @@ docker rm "$id"
 sha256sum "$out"/* | tee "$out/SHA256SUMS"
 ```
 
-Optional: extract the standalone static library and header instead of the complete receiver:
+Optional: copy the vendored standalone static library and header instead of the complete receiver:
 
 ```sh
-docker build --pull=false --target echo-alsa-build -t shairport-echo-alsa:local .
-id=$(docker create shairport-echo-alsa:local)
-docker cp "$id:/src/echo-alsa/target/armv7-unknown-linux-musleabihf/release/libecho_alsa.a" ./libecho_alsa.a
-docker rm "$id"
-cp libs/echo-alsa/include/echo_alsa.h ./echo_alsa.h
+cp libs/libecho_alsa.a ./libecho_alsa.a
+cp libs/echo_alsa.h ./echo_alsa.h
 ```
+
+Their source revision and checksums are recorded in [`libs/README.md`](libs/README.md).
 
 ## Safe staging on the target
 

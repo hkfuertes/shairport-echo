@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Fully static armv7 musl build: real pthread_cancel, no Bionic compatibility patches.
-FROM rust:1.98-bookworm@sha256:93ce27a88655056a51dbdd8f5f2d7ddc071c7b0070fb288a37b5a285fc83971e AS build
+FROM debian:bookworm@sha256:f37a335e82bca302e955fa39f9dfe28f1be618f016f8a2b56318e5a5111afc26 AS build
 
 ARG MUSL_TOOLCHAIN_SHA256=f49f1a15ec62364ef5e4edb4e3990c0e1d2d1a54c90153b8f3869dad63328a10
 
@@ -16,6 +16,10 @@ ARG LIBGCRYPT_SHA256=8b0870897ac5ac67ded568dcfadf45969cfa8a6beb0fd60af2a9eadc2a3
 ARG LIBPLIST_SHA256=7ac42301e896b1ebe3c654634780c82baa7cb70df8554e683ff89f7c2643eb8b
 ARG OPENSSL_SHA256=23c666d0edf20f14249b3d8f0368acaee9ab585b09e1de82107c66e1f3ec9533
 ARG FFMPEG_SHA256=9fd092511605bbebafe095ea6d38d9e40f34d12f7386e1258372df8be0576eb7
+ARG SHAIRPORT_SYNC_COMMIT=7bad231c18368dbd26f298577f6210e36e4b0797
+ARG SHAIRPORT_SYNC_SHA256=eab1fa095e34676d05f68e38d86501d5afa3fc46f83f044859d4d125d526daec
+ARG NQPTP_COMMIT=c925f27c1fd12e4033ac477e5a405969b0b0260b
+ARG NQPTP_SHA256=d2c2fe5d2574d447a817b1585e82c38f4c98774dac8284e5a3f17e188a3a75f9
 
 # musl.cc's armv7l toolchain defaults to armv5te; the Echo is a Cortex-A53 (neon, vfpv4).
 ENV PREFIX=/opt/armv7-musl \
@@ -30,9 +34,7 @@ ENV PREFIX=/opt/armv7-musl \
     CXXFLAGS=-O3\ -fPIC\ -march=armv7-a\ -mfpu=neon-vfpv4\ -mtune=cortex-a53 \
     PKG_CONFIG_LIBDIR=/opt/armv7-musl/lib/pkgconfig \
     PKG_CONFIG_PATH=/opt/armv7-musl/lib/pkgconfig \
-    CARGO_PROFILE_RELEASE_OPT_LEVEL=3 \
-    CARGO_TARGET_ARMV7_UNKNOWN_LINUX_MUSLEABIHF_LINKER=armv7l-linux-musleabihf-gcc \
-    PATH=/opt/armv7l-linux-musleabihf-cross/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/armv7l-linux-musleabihf-cross/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
       autoconf automake autopoint bison bzip2 ca-certificates cmake curl flex gettext libplist-utils libtool make patch perl pkg-config python3 texinfo xxd xz-utils \
@@ -40,8 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -fsSL https://musl.cc/armv7l-linux-musleabihf-cross.tgz -o /tmp/musl.tgz \
     && echo "${MUSL_TOOLCHAIN_SHA256}  /tmp/musl.tgz" | sha256sum -c - \
     && tar -xzf /tmp/musl.tgz -C /opt \
-    && rm /tmp/musl.tgz \
-    && rustup target add armv7-unknown-linux-musleabihf
+    && rm /tmp/musl.tgz
 
 # Static binaries only: a NEEDED entry would mean a dependency on Android's dynamic libraries.
 RUN printf '#!/bin/sh\nset -e\nfor f; do "$READELF" -h "$f" | grep -q "Machine:.*ARM"; ! "$READELF" -d "$f" | grep -q NEEDED; done\n' \
@@ -70,18 +71,14 @@ FROM scratch AS artifact
 COPY --from=build /out/alsa-open-probe /alsa-open-probe
 COPY config/echo-alsa.conf /echo-alsa.conf
 
-FROM build AS controls-build
-COPY libs/echo-controls /src/echo-controls
-WORKDIR /src/echo-controls
-RUN cargo build --locked --release --target armv7-unknown-linux-musleabihf \
-    && "$CC" -O3 -static -Iinclude tests/echo_controls_ffi_link.c \
-      target/armv7-unknown-linux-musleabihf/release/libecho_controls.a \
-      -lm -o /tmp/echo-controls-ffi-link \
-    && check-static /tmp/echo-controls-ffi-link
-
-FROM scratch AS controls-artifact
-COPY --from=controls-build /src/echo-controls/target/armv7-unknown-linux-musleabihf/release/libecho_controls.a /libecho_controls.a
-COPY libs/echo-controls/include/echo_controls.h /include/echo_controls.h
+FROM build AS echo-artifacts-check
+COPY libs/libecho_alsa.a /tmp/libecho_alsa.a
+COPY libs/echo_alsa.h /tmp/echo_alsa.h
+COPY --chmod=755 libs/echo-volume-control /tmp/echo-volume-control
+RUN "$AR" t /tmp/libecho_alsa.a | grep -q . \
+    && printf '#include "echo_alsa.h"\nint main(void) { return 0; }\n' >/tmp/check-echo-alsa.c \
+    && "$CC" -I/tmp -c /tmp/check-echo-alsa.c -o /tmp/check-echo-alsa.o \
+    && check-static /tmp/echo-volume-control
 
 FROM build AS uuid-build
 RUN curl -fsSL "https://www.kernel.org/pub/linux/utils/util-linux/v${UTIL_LINUX_VERSION%.*}/util-linux-${UTIL_LINUX_VERSION}.tar.xz" -o /tmp/util-linux.tar.xz \
@@ -159,28 +156,14 @@ RUN cd /src/ffmpeg \
     && make -j"$(nproc)" && make install \
     && test -f "$PREFIX/lib/libavcodec.a"
 
-FROM build AS echo-alsa-build
-COPY libs/echo-alsa /src/echo-alsa
-WORKDIR /src/echo-alsa
-RUN cargo build --locked --release --target armv7-unknown-linux-musleabihf \
-    && "$CC" -c tests/armv7_alsa_layout.c -o /tmp/armv7-alsa-layout.o \
-    && "$CC" -Iinclude -c tests/echo_alsa_ffi_header.c -o /tmp/echo-alsa-ffi-header.o \
-    && test -f target/armv7-unknown-linux-musleabihf/release/libecho_alsa.a
-
-FROM build AS volume-control-build
-COPY libs/echo-alsa /src/echo-alsa
-COPY libs/echo-controls /src/echo-controls
-COPY libs/echo-volume-control /src/echo-volume-control
-WORKDIR /src/echo-volume-control
-RUN cargo test --locked \
-    && cargo build --locked --release --target armv7-unknown-linux-musleabihf \
-    && "$STRIP" target/armv7-unknown-linux-musleabihf/release/echo-volume-control \
-    && check-static target/armv7-unknown-linux-musleabihf/release/echo-volume-control
-
 FROM shairport-deps AS shairport-build
-COPY --from=echo-alsa-build /src/echo-alsa/target/armv7-unknown-linux-musleabihf/release/libecho_alsa.a /opt/armv7-musl/lib/libecho_alsa.a
-COPY libs/echo-alsa/include/echo_alsa.h /opt/armv7-musl/include/echo_alsa.h
-COPY third_party/shairport-sync /src/shairport-sync
+COPY --from=echo-artifacts-check /tmp/libecho_alsa.a /opt/armv7-musl/lib/libecho_alsa.a
+COPY --from=echo-artifacts-check /tmp/echo_alsa.h /opt/armv7-musl/include/echo_alsa.h
+RUN mkdir -p /src/shairport-sync \
+    && curl -fsSL "https://github.com/mikebrady/shairport-sync/archive/${SHAIRPORT_SYNC_COMMIT}.tar.gz" -o /tmp/shairport-sync.tar.gz \
+    && echo "${SHAIRPORT_SYNC_SHA256}  /tmp/shairport-sync.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/shairport-sync.tar.gz -C /src/shairport-sync --strip-components=1 \
+    && rm /tmp/shairport-sync.tar.gz
 COPY patches/shairport-sync /patches/shairport-sync
 WORKDIR /src/shairport-sync
 RUN for patch in /patches/shairport-sync/*.patch; do patch -p1 < "$patch"; done \
@@ -205,7 +188,11 @@ COPY scripts/echo-airplay.sh /echo-airplay
 COPY scripts/echo-route.sh /echo-route
 
 FROM build AS nqptp-build
-COPY third_party/nqptp /src/nqptp
+RUN mkdir -p /src/nqptp \
+    && curl -fsSL "https://github.com/mikebrady/nqptp/archive/${NQPTP_COMMIT}.tar.gz" -o /tmp/nqptp.tar.gz \
+    && echo "${NQPTP_SHA256}  /tmp/nqptp.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/nqptp.tar.gz -C /src/nqptp --strip-components=1 \
+    && rm /tmp/nqptp.tar.gz
 WORKDIR /src/nqptp
 RUN autoreconf -fi \
     && LDFLAGS=-static ac_cv_func_malloc_0_nonnull=yes ./configure --build=x86_64-pc-linux-gnu --host="$HOST" \
@@ -217,7 +204,7 @@ COPY --from=nqptp-build /src/nqptp/nqptp /nqptp
 
 # Host round-trip check (no CAP_SYS_ADMIN here, so it must still rotate the seed), then the target build.
 FROM build AS seed-build
-COPY tools/entropy-seed.c /src/entropy-seed.c
+COPY libs/entropy-seed/entropy-seed.c /src/entropy-seed.c
 RUN gcc -O2 -Wall -Wextra -Werror /src/entropy-seed.c -o /tmp/entropy-seed-host \
     && /tmp/entropy-seed-host /tmp/seed && a=$(sha256sum /tmp/seed) \
     && /tmp/entropy-seed-host /tmp/seed && [ "$a" != "$(sha256sum /tmp/seed)" ] && [ "$(stat -c %s /tmp/seed)" = 512 ] \
@@ -228,7 +215,7 @@ FROM scratch AS twrp-artifact
 COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /payload/system/lib/shairport-echo/shairport-sync
 COPY --from=nqptp-build /src/nqptp/nqptp /payload/system/lib/shairport-echo/nqptp
 COPY --from=seed-build /entropy-seed /payload/system/lib/shairport-echo/entropy-seed
-COPY --from=volume-control-build /src/echo-volume-control/target/armv7-unknown-linux-musleabihf/release/echo-volume-control /payload/system/lib/shairport-echo/echo-volume-control
+COPY --from=echo-artifacts-check /tmp/echo-volume-control /payload/system/lib/shairport-echo/echo-volume-control
 COPY --chmod=755 scripts/ledcontroller.sh /payload/system/bin/ledcontroller
 COPY config/echo-alsa.conf /payload/system/lib/shairport-echo/echo-alsa.conf
 COPY config/shairport-sync.conf /payload/system/lib/shairport-echo/shairport-sync.conf

@@ -21,6 +21,12 @@ verify_zip() {
   unzip -t "$archive" >/dev/null || fail "invalid ZIP: $archive"
 }
 
+[ ! -e "$root/third_party" ] || fail 'upstream sources must not be vendored'
+[ -s "$root/libs/libecho_alsa.a" ] || fail 'missing vendored libecho_alsa.a'
+[ -s "$root/libs/echo_alsa.h" ] || fail 'missing vendored echo_alsa.h'
+[ -x "$root/libs/echo-volume-control" ] || fail 'missing vendored echo-volume-control'
+grep -Fq 'ARG SHAIRPORT_SYNC_COMMIT=' "$root/Dockerfile" || fail 'missing Shairport source pin'
+grep -Fq 'ARG NQPTP_COMMIT=' "$root/Dockerfile" || fail 'missing NQPTP source pin'
 grep -Fq -- '--with-metadata-multicast' "$root/Dockerfile" ||
   fail 'Shairport must include the UDP metadata sender'
 verify_zip "$install_zip"
