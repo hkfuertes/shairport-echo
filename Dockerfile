@@ -217,6 +217,6 @@ COPY --from=nqptp-build /src/nqptp/nqptp /payload/system/lib/shairport-echo/nqpt
 COPY --chmod=755 scripts/nqptp-service.sh /payload/system/lib/shairport-echo/nqptp-service
 COPY --from=seed-build /entropy-seed /payload/system/lib/shairport-echo/entropy-seed
 COPY --from=echo-artifacts-check /tmp/speakerd /payload/system/bin/speakerd
-COPY config/echo-alsa.conf /payload/system/lib/shairport-echo/echo-alsa.conf
-COPY config/shairport-sync.conf /payload/system/lib/shairport-echo/shairport-sync.conf
-COPY config/speakerd.ini /payload/system/lib/shairport-echo/speakerd.ini
+COPY --chmod=644 config/echo-alsa.conf /payload/system/lib/shairport-echo/echo-alsa.conf
+COPY --chmod=644 config/shairport-sync.conf /payload/system/lib/shairport-echo/shairport-sync.conf
+COPY --chmod=644 config/speakerd.ini /payload/system/lib/shairport-echo/speakerd.ini
