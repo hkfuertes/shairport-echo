@@ -74,11 +74,11 @@ COPY config/echo-alsa.conf /echo-alsa.conf
 FROM build AS echo-artifacts-check
 COPY libs/libecho_alsa.a /tmp/libecho_alsa.a
 COPY libs/echo_alsa.h /tmp/echo_alsa.h
-COPY --chmod=755 libs/echo-volume-control /tmp/echo-volume-control
+COPY --chmod=755 libs/speakerd /tmp/speakerd
 RUN "$AR" t /tmp/libecho_alsa.a | grep -q . \
     && printf '#include "echo_alsa.h"\nint main(void) { return 0; }\n' >/tmp/check-echo-alsa.c \
     && "$CC" -I/tmp -c /tmp/check-echo-alsa.c -o /tmp/check-echo-alsa.o \
-    && check-static /tmp/echo-volume-control
+    && check-static /tmp/speakerd
 
 FROM build AS uuid-build
 RUN curl -fsSL "https://www.kernel.org/pub/linux/utils/util-linux/v${UTIL_LINUX_VERSION%.*}/util-linux-${UTIL_LINUX_VERSION}.tar.xz" -o /tmp/util-linux.tar.xz \
@@ -214,8 +214,9 @@ RUN gcc -O2 -Wall -Wextra -Werror /src/entropy-seed.c -o /tmp/entropy-seed-host 
 FROM scratch AS twrp-artifact
 COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /payload/system/lib/shairport-echo/shairport-sync
 COPY --from=nqptp-build /src/nqptp/nqptp /payload/system/lib/shairport-echo/nqptp
+COPY --chmod=755 scripts/nqptp-service.sh /payload/system/lib/shairport-echo/nqptp-service
 COPY --from=seed-build /entropy-seed /payload/system/lib/shairport-echo/entropy-seed
-COPY --from=echo-artifacts-check /tmp/echo-volume-control /payload/system/lib/shairport-echo/echo-volume-control
-COPY --chmod=755 scripts/ledcontroller.sh /payload/system/bin/ledcontroller
+COPY --from=echo-artifacts-check /tmp/speakerd /payload/system/bin/speakerd
 COPY config/echo-alsa.conf /payload/system/lib/shairport-echo/echo-alsa.conf
 COPY config/shairport-sync.conf /payload/system/lib/shairport-echo/shairport-sync.conf
+COPY config/speakerd.ini /payload/system/lib/shairport-echo/speakerd.ini
