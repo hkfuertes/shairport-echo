@@ -10,7 +10,7 @@ Experimental AirPlay 2 receiver for rooted Android ARMv7 Echo Dot Minimal Base d
 - Uses vendored static `libs/libecho_alsa.a` through Shairport's `audio_echo` backend: 48 kHz stereo S16_LE, 1,024-frame periods, four-period PCM buffer, mono speaker mixdown, and retry of the same period after an XRUN.
 - Vendors static `speakerd` for the LED ring, ALSA control events, mixer/privacy policy, and service supervision. The installer makes `/system/bin/ledcontroller -> speakerd`; NQPTP is its always-on service and Shairport its only mode `init`. Shairport sends volume metadata over localhost UDP, while `speakerd` keeps local `+/-` off and makes privacy the speaker-amp kill switch.
 - Builds a reversible TWRP ZIP for `biscuit`, `radar`, and `radar_puffin` only. It preserves the original regular `/system/bin/ledcontroller`, installs `/system/bin/speakerd`, links `ledcontroller` to it, and restores the original on uninstall.
-- The installer seeds `/data/shairport-sync.conf` and `/data/speakerd.ini` only when absent; both are authoritative thereafter. `speakerd` turns off the inherited LED boot animation. Its NQPTP service restores `/data/shairport-echo.seed`, waits for Wi-Fi, and sets a MAC-derived hostname (`shairport-<wlan0 MAC>`) so multiple Echos never collide as `localhost.local`. `general.model` (patch) picks the sender icon, e.g. `AirPort10,115`, `AudioAccessory5,1`, or `AudioAccessory1,1`.
+- The installer seeds `/data/shairport-sync.conf` and `/data/speakerd.ini` only when absent; both are authoritative thereafter. `speakerd` turns off the inherited LED boot animation. Its NQPTP service (`nqptp-service`) restores `/data/shairport-echo.seed`, waits for Wi-Fi, sets a MAC-derived hostname (`shairport-<wlan0 MAC>`) so multiple Echos never collide as `localhost.local`, and mounts `/dev/shm` if missing. `general.model` (patch) picks the sender icon, e.g. `AirPort10,115`, `AudioAccessory5,1`, or `AudioAccessory1,1`.
 - Shairport patches live in `patches/shairport-sync/`: the three-patch series (`--with-echo-alsa` with external controls, `general.model`, TinySVCmDNS AP2 registration) applies alone to pristine upstream, e.g. from Buildroot.
 
 ## Build and test
@@ -23,13 +23,23 @@ make test  # also run the host-side ZIP/install/upgrade/uninstall regression
 
 Docker downloads SHA-256-pinned Shairport Sync 5.5.1 and NQPTP 1.2.8 source archives, applies the tracked patch series, and uses checked-in Echo artifacts with provenance and checksums recorded in [`libs/README.md`](libs/README.md). The digest-pinned Debian base and checksum-verified musl.cc `armv7l-linux-musleabihf` toolchain keep builds repeatable from a clean machine.
 
-Install the generated ZIP from TWRP on an explicitly selected supported device.
+Install the generated ZIP from TWRP on an explicitly selected supported device (add `-s <serial>` when several are attached):
+
+```sh
+adb reboot recovery
+adb push out/shairport-echo-0.1.0-armv7.zip /tmp/
+adb shell twrp install /tmp/shairport-echo-0.1.0-armv7.zip
+adb reboot
+```
+
+The AirPlay name defaults to `ro.product.name`; change `general.name` in `/data/shairport-sync.conf` and reboot.
 
 ## Validation status
 
 - `make test` verifies ZIP structure, device gating, fresh install, upgrade, uninstall, both config seeds and preservation, plus the `ledcontroller -> speakerd` link.
-- Biscuit exercised AP2 realtime and buffered playback, metadata-driven volume/ring updates, and the physical privacy `0/1` speaker-amp gate.
-- Radar/Radar Puffin exercised a fresh TWRP install, AirPlay discovery and connection from iPhone and Mac alongside Biscuit, plus the `AudioAccessory1,1` advertisement. The dual-device test exposed and then verified the `localhost.local` collision fix.
+- Biscuit ran the `speakerd` package end to end: fresh TWRP install, cold boot with `speakerd` supervising NQPTP (via `nqptp-service`: entropy, hostname, `/dev/shm`) and Shairport, and AirPlay discovery under a custom name.
+- With the previous `echo-volume-control` package, Biscuit exercised AP2 realtime and buffered playback, metadata-driven volume/ring updates, and the physical privacy `0/1` speaker-amp gate.
+- With the previous package, Radar/Radar Puffin exercised a fresh TWRP install, AirPlay discovery and connection from iPhone and Mac alongside Biscuit, plus the `AudioAccessory1,1` advertisement. The dual-device test exposed and then verified the `localhost.local` collision fix.
 - This does **not** establish multi-room timing, pairing persistence across service restarts, or native HomePod stereo pairing.
 
 ## Limits and safety
