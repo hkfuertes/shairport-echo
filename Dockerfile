@@ -214,6 +214,7 @@ RUN gcc -O2 -Wall -Wextra -Werror /src/entropy-seed.c -o /tmp/entropy-seed-host 
 FROM scratch AS twrp-artifact
 COPY --from=shairport-build /src/shairport-sync/build/shairport-sync /payload/system/lib/shairport-echo/shairport-sync
 COPY --from=nqptp-build /src/nqptp/nqptp /payload/system/lib/shairport-echo/nqptp
+COPY --chmod=755 scripts/nqptp-service.sh /payload/system/lib/shairport-echo/nqptp-service
 COPY --from=seed-build /entropy-seed /payload/system/lib/shairport-echo/entropy-seed
 COPY --from=echo-artifacts-check /tmp/speakerd /payload/system/bin/speakerd
 COPY config/echo-alsa.conf /payload/system/lib/shairport-echo/echo-alsa.conf

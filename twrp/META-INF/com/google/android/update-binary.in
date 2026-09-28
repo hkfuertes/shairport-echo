@@ -75,6 +75,7 @@ label_like_data() {
 payload_files() {
   cat <<'EOF'
 system/lib/shairport-echo/nqptp 755
+system/lib/shairport-echo/nqptp-service 755
 system/lib/shairport-echo/entropy-seed 755
 system/lib/shairport-echo/shairport-sync 755
 system/lib/shairport-echo/shairport-sync.conf 644

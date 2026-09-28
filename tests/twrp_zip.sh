@@ -26,6 +26,8 @@ verify_zip() {
 [ -s "$root/libs/echo_alsa.h" ] || fail 'missing vendored echo_alsa.h'
 [ -x "$root/libs/speakerd" ] || fail 'missing vendored speakerd'
 [ -f "$root/config/speakerd.ini" ] || fail 'missing speakerd config'
+[ -x "$root/scripts/nqptp-service.sh" ] || fail 'missing nqptp helper'
+sh -n "$root/scripts/nqptp-service.sh" || fail 'invalid nqptp helper'
 grep -Fq 'ARG SHAIRPORT_SYNC_COMMIT=' "$root/Dockerfile" || fail 'missing Shairport source pin'
 grep -Fq 'ARG NQPTP_COMMIT=' "$root/Dockerfile" || fail 'missing NQPTP source pin'
 grep -Fq -- '--with-metadata-multicast' "$root/Dockerfile" ||
@@ -49,6 +51,7 @@ expected_install = {
     "payload/system/lib/shairport-echo/shairport-sync.conf",
     "payload/system/lib/shairport-echo/speakerd.ini",
     "payload/system/lib/shairport-echo/nqptp",
+    "payload/system/lib/shairport-echo/nqptp-service",
     "payload/system/lib/shairport-echo/entropy-seed",
     "payload/system/lib/shairport-echo/shairport-sync",
 }
@@ -64,6 +67,7 @@ for archive in (install, uninstall):
 for name in (
     "payload/system/bin/speakerd",
     "payload/system/lib/shairport-echo/nqptp",
+    "payload/system/lib/shairport-echo/nqptp-service",
     "payload/system/lib/shairport-echo/entropy-seed",
     "payload/system/lib/shairport-echo/shairport-sync",
 ):
@@ -72,8 +76,9 @@ for name in (
 assert stat.S_IMODE(install.getinfo("payload/system/lib/shairport-echo/speakerd.ini").external_attr >> 16) == 0o644
 modes = install.read("payload/system/lib/shairport-echo/speakerd.ini").decode()
 assert "\n[services]\n" in modes
-assert "nqptp = sh -c " in modes
-assert 'exec "$R/nqptp"' in modes
+assert "nqptp = /system/lib/shairport-echo/nqptp-service" in modes
+helper = install.read("payload/system/lib/shairport-echo/nqptp-service").decode()
+assert 'exec "$R/nqptp"' in helper
 assert "\n[airplay]\n" in modes
 assert modes.count("\ninit = ") == 1
 assert not any(name.startswith("data/") or "sha256" in name for name in install.namelist())
@@ -83,6 +88,7 @@ install_script=$tmp/install/META-INF/com/google/android/update-binary
 uninstall_script=$tmp/uninstall/META-INF/com/google/android/update-binary
 sh -n "$install_script"
 sh -n "$uninstall_script"
+sh -n "$tmp/install/payload/system/lib/shairport-echo/nqptp-service"
 ! grep -E -q '@(MODE|VERSION)@' "$install_script" "$uninstall_script" ||
   fail 'unrendered installer placeholder'
 ! grep -E -q '/(boot|recovery|cache|persist)(/|$)' "$install_script" "$uninstall_script" ||
@@ -145,7 +151,7 @@ check_fresh_lifecycle() {
     fail "$reported speakerd differs"
   cmp "$tmp/$reported-original" "$system/bin/ledcontroller.shairport-echo-orig" ||
     fail "$reported original was not preserved"
-  for file in entropy-seed nqptp shairport-sync shairport-sync.conf speakerd.ini echo-alsa.conf; do
+  for file in entropy-seed nqptp nqptp-service shairport-sync shairport-sync.conf speakerd.ini echo-alsa.conf; do
     cmp "$tmp/install/payload/system/lib/shairport-echo/$file" "$lib/$file" ||
       fail "$reported $file differs"
   done
