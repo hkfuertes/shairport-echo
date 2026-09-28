@@ -122,7 +122,7 @@ index 0000000..bb09cf5
 +    return rc;
 +  }
 +
-+  // Volume, mute and speaker amplification are owned by echo-volume-control.
++  // Volume, mute and speaker amplification are owned by speakerd.
 +  // This handle retains only PCM, routing and XRUN GPIO recovery.
 +  rc = echo_alsa_set_external_controls(device, 1);
 +  if (rc != 0) {
@@ -324,13 +324,13 @@ index 0000000..bb09cf5
 +}
 +
 +static void volume(double vol) {
-+  // Metadata carries this to echo-volume-control, the sole mixer owner.
-+  debug(2, "echo: handing volume %.2f dB to echo-volume-control", vol / 100.0);
++  // Metadata carries this to speakerd, the sole mixer owner.
++  debug(2, "echo: handing volume %.2f dB to speakerd", vol / 100.0);
 +}
 +
 +static int mute(int do_mute) {
 +  // The pvol metadata record carries the same -144 dB sentinel to the controller.
-+  debug(2, "echo: handing mute %d to echo-volume-control", do_mute != 0);
++  debug(2, "echo: handing mute %d to speakerd", do_mute != 0);
 +  return 1;
 +}
 +

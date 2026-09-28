@@ -43,10 +43,11 @@ docker rm "$container" >/dev/null
 container=
 
 [ -z "$(find "$work/payload" -type l -print)" ] || fail 'artifact contains a symlink'
-[ -x "$work/payload/system/bin/ledcontroller" ] || fail 'missing ledcontroller entrypoint'
-for file in nqptp shairport-sync entropy-seed echo-volume-control; do
+[ -x "$work/payload/system/bin/speakerd" ] || fail 'missing speakerd binary'
+for file in nqptp shairport-sync entropy-seed; do
   [ -x "$work/payload/system/lib/shairport-echo/$file" ] || fail "missing $file"
 done
+[ -f "$work/payload/system/lib/shairport-echo/speakerd.ini" ] || fail 'missing speakerd.ini'
 
 install=$work/install
 mkdir -p "$install/META-INF/com/google/android"

@@ -6,18 +6,24 @@ VERSION='@VERSION@'
 OUTFD=${2:-}
 ZIP=${3:-}
 SYSTEM=${SHAIRPORT_ECHO_SYSTEM:-/system}
+DATA=${SHAIRPORT_ECHO_DATA:-/data}
 TMPROOT=${SHAIRPORT_ECHO_TMPDIR:-/tmp}
 GETPROP=${SHAIRPORT_ECHO_GETPROP:-getprop}
 UNZIP=${SHAIRPORT_ECHO_UNZIP:-unzip}
 CHCON=${SHAIRPORT_ECHO_CHCON:-chcon}
 CHOWN=${SHAIRPORT_ECHO_CHOWN:-chown}
+READLINK=${SHAIRPORT_ECHO_READLINK:-readlink}
 
 SERVICE="$SYSTEM/bin/ledcontroller"
+SPEAKERD="$SYSTEM/bin/speakerd"
 BACKUP="$SYSTEM/bin/ledcontroller.shairport-echo-orig"
 RUNTIME="$SYSTEM/lib/shairport-echo"
 STATE_DIR="$SYSTEM/etc/shairport-echo"
 STATE="$STATE_DIR/installed"
+SHAIRPORT_CONFIG="$DATA/shairport-sync.conf"
+SPEAKERD_CONFIG="$DATA/speakerd.ini"
 STAGE=
+DATA_STAGE=
 FIRST_INSTALL=0
 
 ui_print() {
@@ -41,6 +47,16 @@ require_regular() {
   [ -f "$1" ] && [ ! -L "$1" ] || die "expected regular file: $1"
 }
 
+require_symlink() {
+  [ -L "$1" ] && [ "$("$READLINK" "$1")" = "$2" ] || die "expected symlink $1 -> $2"
+}
+
+legacy_install() {
+  [ -f "$SERVICE" ] && [ ! -L "$SERVICE" ] &&
+    [ -f "$RUNTIME/echo-volume-control" ] && [ ! -L "$RUNTIME/echo-volume-control" ] &&
+    is_absent "$SPEAKERD"
+}
+
 marker_value() {
   sed -n "s/^$2=//p" "$1" | sed -n '1p'
 }
@@ -51,16 +67,20 @@ label_like_system() {
   "$CHCON" --reference="$reference" "$1" >/dev/null 2>&1 || true
 }
 
+label_like_data() {
+  "$CHCON" --reference="$DATA" "$1" >/dev/null 2>&1 || true
+}
+
 # path mode
 payload_files() {
   cat <<'EOF'
 system/lib/shairport-echo/nqptp 755
 system/lib/shairport-echo/entropy-seed 755
-system/lib/shairport-echo/echo-volume-control 755
 system/lib/shairport-echo/shairport-sync 755
 system/lib/shairport-echo/shairport-sync.conf 644
+system/lib/shairport-echo/speakerd.ini 644
 system/lib/shairport-echo/echo-alsa.conf 644
-system/bin/ledcontroller 755
+system/bin/speakerd 755
 EOF
 }
 
@@ -98,6 +118,12 @@ verify_ours() {
   [ "$(marker_value "$STATE" owner)" = shairport-echo ] || die 'unknown ownership marker'
   [ "$(marker_value "$STATE" device)" = "$product" ] || die 'marker belongs to another device'
   require_regular "$BACKUP"
+  # The previous release used a regular ledcontroller shell and echo-volume-control.
+  if legacy_install; then
+    return
+  fi
+  require_regular "$SPEAKERD"
+  require_symlink "$SERVICE" speakerd
   # Updates may add payload files; anything already there must still be ours.
   payload_files | while read -r path mode; do
     is_absent "$SYSTEM/${path#system/}" || require_regular "$SYSTEM/${path#system/}"
@@ -110,6 +136,7 @@ prepare_install() {
   else
     FIRST_INSTALL=1
     is_absent "$BACKUP" || die 'refusing existing ledcontroller backup'
+    is_absent "$SPEAKERD" || die 'refusing existing speakerd binary'
     is_absent "$RUNTIME" || die 'refusing existing runtime directory'
     is_absent "$STATE_DIR" || die 'refusing existing ownership directory'
     require_regular "$SERVICE"
@@ -145,6 +172,60 @@ install_file() {
   mv -f "$temporary" "$destination" || die "could not activate $relative"
 }
 
+default_name() {
+  name=$("$GETPROP" ro.product.name 2>/dev/null || true)
+  case "$name" in
+    ''|*[!A-Za-z0-9_.\ -]*) name=Echo ;;
+  esac
+  printf '%s\n' "$name"
+}
+
+prepare_data_stage() {
+  if [ "$DATA" = /data ] && ! mount | grep -Eq '[[:space:]]/data[[:space:]]'; then
+    mount /data >/dev/null 2>&1 || die 'could not mount /data'
+  fi
+  [ -d "$DATA" ] && [ ! -L "$DATA" ] || die "invalid data directory: $DATA"
+  DATA_STAGE="$DATA/.shairport-echo-install.$$"
+  is_absent "$DATA_STAGE" || die "refusing existing data stage: $DATA_STAGE"
+  mkdir "$DATA_STAGE" || die 'could not create data stage'
+  chmod 700 "$DATA_STAGE" || die 'could not chmod data stage'
+}
+
+seed_shairport_config() {
+  if [ -e "$SHAIRPORT_CONFIG" ] || [ -L "$SHAIRPORT_CONFIG" ]; then
+    require_regular "$SHAIRPORT_CONFIG"
+    return
+  fi
+  temporary="$DATA_STAGE/shairport-sync.conf"
+  sed "s/@NAME@/$(default_name)/" "$RUNTIME/shairport-sync.conf" >"$temporary" ||
+    die 'could not seed shairport-sync.conf'
+  chmod 644 "$temporary" || die 'could not chmod shairport-sync.conf'
+  "$CHOWN" 0:0 "$temporary" || die 'could not chown shairport-sync.conf'
+  label_like_data "$temporary"
+  mv "$temporary" "$SHAIRPORT_CONFIG" || die 'could not activate shairport-sync.conf'
+}
+
+seed_speakerd_config() {
+  if [ -e "$SPEAKERD_CONFIG" ] || [ -L "$SPEAKERD_CONFIG" ]; then
+    require_regular "$SPEAKERD_CONFIG"
+    return
+  fi
+  temporary="$DATA_STAGE/speakerd.ini"
+  cp "$RUNTIME/speakerd.ini" "$temporary" || die 'could not seed speakerd.ini'
+  chmod 644 "$temporary" || die 'could not chmod speakerd.ini'
+  "$CHOWN" 0:0 "$temporary" || die 'could not chown speakerd.ini'
+  label_like_data "$temporary"
+  mv "$temporary" "$SPEAKERD_CONFIG" || die 'could not activate speakerd.ini'
+}
+
+seed_configs() {
+  prepare_data_stage
+  seed_shairport_config
+  seed_speakerd_config
+  rmdir "$DATA_STAGE" || die 'could not remove data stage'
+  DATA_STAGE=
+}
+
 preserve_original() {
   temporary="$BACKUP.shairport-echo-new"
   cp "$SERVICE" "$temporary" || die 'could not preserve ledcontroller'
@@ -152,6 +233,11 @@ preserve_original() {
   "$CHOWN" 0:2000 "$temporary" || die 'could not chown saved ledcontroller'
   label_like_system "$temporary"
   mv "$temporary" "$BACKUP" || die 'could not activate ledcontroller backup'
+}
+
+install_service_link() {
+  rm -f "$SERVICE" || die 'could not replace ledcontroller'
+  ln -s speakerd "$SERVICE" || die 'could not link ledcontroller to speakerd'
 }
 
 write_state() {
@@ -174,10 +260,13 @@ install() {
   if [ "$FIRST_INSTALL" -eq 1 ]; then
     preserve_original
   fi
-  # ledcontroller is last in payload_files: the service switches only once the runtime is in place.
+  # The symlink switches the Android service only after its binary, config and helpers exist.
   payload_files | while read -r path mode; do
     install_file "$path" "$mode"
   done
+  rm -f "$RUNTIME/echo-volume-control" || die 'could not remove obsolete echo-volume-control'
+  seed_configs
+  install_service_link
   write_state
   verify_ours
   ui_print "Installed shairport-echo $VERSION for $product; restart or reboot to start it."
@@ -185,23 +274,28 @@ install() {
 
 uninstall() {
   verify_ours
+  rm -f "$SERVICE" || die 'could not remove ledcontroller link'
   mv -f "$BACKUP" "$SERVICE" || die 'could not restore ledcontroller'
   require_regular "$SERVICE"
+  rm -f "$SPEAKERD" || die 'could not remove speakerd'
   rm -rf "$RUNTIME" || die 'could not remove runtime files'
   rm -f "$STATE" || die 'could not remove ownership marker'
   rmdir "$STATE_DIR" || die 'could not remove ownership directory'
-  ui_print 'Uninstalled shairport-echo; /data/shairport-sync.conf was preserved.'
+  ui_print 'Uninstalled shairport-echo; /data configs were preserved.'
 }
 
 finish() {
   status=$?
   trap - EXIT HUP INT TERM
-  rm -rf "$STAGE" "$SERVICE.shairport-echo-new" "$BACKUP.shairport-echo-new" \
-    "$STATE.shairport-echo-new" 2>/dev/null || true
+  rm -rf "$STAGE" "$SERVICE.shairport-echo-new" "$SPEAKERD.shairport-echo-new" \
+    "$BACKUP.shairport-echo-new" "$STATE.shairport-echo-new" 2>/dev/null || true
+  [ -z "$DATA_STAGE" ] || rm -rf "$DATA_STAGE" 2>/dev/null || true
   if [ "$status" -ne 0 ] && [ "$FIRST_INSTALL" -eq 1 ]; then
     if [ -f "$BACKUP" ] && [ ! -L "$BACKUP" ]; then
+      rm -f "$SERVICE" 2>/dev/null || true
       mv -f "$BACKUP" "$SERVICE" 2>/dev/null || true
     fi
+    rm -f "$SPEAKERD" 2>/dev/null || true
     rm -rf "$RUNTIME" "$STATE_DIR" 2>/dev/null || true
   fi
   sync 2>/dev/null || true
@@ -210,7 +304,7 @@ finish() {
 trap finish EXIT HUP INT TERM
 
 ensure_system
-for tool in "$GETPROP" "$UNZIP" "$CHOWN"; do
+for tool in "$GETPROP" "$UNZIP" "$CHOWN" "$READLINK"; do
   command -v "$tool" >/dev/null 2>&1 || die "missing required tool: $tool"
 done
 reported_product=$($GETPROP ro.product.device)

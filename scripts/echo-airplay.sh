@@ -1,6 +1,6 @@
 #!/system/bin/sh
 # Legacy manual A/B launcher only; the installed receiver uses ledcontroller instead.
-# It does not start echo-volume-control or apply the unique mDNS hostname.
+# It does not start speakerd or apply the unique mDNS hostname.
 set -eu
 
 root=${SHAIRPORT_ECHO_ROOT:-$(dirname "$0")}
