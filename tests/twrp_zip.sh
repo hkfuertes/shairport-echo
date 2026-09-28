@@ -3,7 +3,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-version=${VERSION:-0.1.0}
+version=${VERSION:-0.2.0}
 install_zip=$root/out/shairport-echo-$version-armv7.zip
 uninstall_zip=$root/out/shairport-echo-uninstall-$version.zip
 

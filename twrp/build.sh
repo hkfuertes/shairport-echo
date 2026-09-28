@@ -2,7 +2,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-version=${VERSION:-0.1.0}
+version=${VERSION:-0.2.0}
 image=${TWRP_IMAGE:-shairport-echo-twrp-artifact:local}
 work=$root/target/twrp
 out=$root/out
