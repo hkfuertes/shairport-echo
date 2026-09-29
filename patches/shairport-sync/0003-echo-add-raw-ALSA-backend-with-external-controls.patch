@@ -11,9 +11,9 @@ Signed-off-by: Miguel Fuertes <hkfuertes@users.noreply.github.com>
 ---
  Makefile.am  |   5 +
  audio.c      |   6 ++
- audio_echo.c | 291 +++++++++++++++++++++++++++++++++++++++++++++++++++
+ audio_echo.c | 331 +++++++++++++++++++++++++++++++++++++++++++++++++++++
  configure.ac |   7 ++
- 4 files changed, 309 insertions(+)
+ 4 files changed, 349 insertions(+)
  create mode 100644 audio_echo.c
 
 diff --git a/Makefile.am b/Makefile.am
@@ -58,10 +58,10 @@ index c1d2734..0d33052 100644
  #endif
 diff --git a/audio_echo.c b/audio_echo.c
 new file mode 100644
-index 0000000..bb09cf5
+index 0000000..d0331e1
 --- /dev/null
 +++ b/audio_echo.c
-@@ -0,0 +1,291 @@
+@@ -0,0 +1,331 @@
 +/*
 + * Echo raw-ALSA audio backend. This file is part of Shairport Sync.
 + *
@@ -73,6 +73,9 @@ index 0000000..bb09cf5
 +
 +#include "audio.h"
 +#include "common.h"
++#ifdef CONFIG_METADATA
++#include "metadata/core.h"
++#endif
 +
 +#include <echo_alsa.h>
 +#include <errno.h>
@@ -92,6 +95,31 @@ index 0000000..bb09cf5
 +static int16_t echo_period[ECHO_PERIOD_FRAMES * ECHO_CHANNELS];
 +static uint32_t echo_pending_frames = 0;
 +static int echo_discontinuity = 1;
++
++static int echo_output_active = 0;
++
++// speakerd switches the speaker amplifier on at 'obeg' and off at 'oend'. 'obeg' waits for the
++// first timed frame, when the silent lead-in has already powered the codec: no pop, no idle hiss.
++// Returns +1/-1 on a change, for send_output_state once echo_mutex is released.
++static int set_output_active(int active) {
++  if (echo_output_active == active)
++    return 0;
++  echo_output_active = active;
++  return active ? 1 : -1;
++}
++
++// Never under echo_mutex: sending metadata contains cancellation points.
++static void send_output_state(int change) {
++#ifdef CONFIG_METADATA
++  if (change != 0) {
++    int rc = send_ssnc_metadata(change > 0 ? 'obeg' : 'oend', NULL, 0, 1);
++    if (rc != 0)
++      debug(1, "echo: failed to send output metadata: %d", rc);
++  }
++#else
++  (void)change;
++#endif
++}
 +
 +static volume_range_t echo_volume_range = {.minimum_volume_dB = -6350, .maximum_volume_dB = 0};
 +static output_parameters_t echo_parameters = {.volume_range = &echo_volume_range};
@@ -212,7 +240,6 @@ index 0000000..bb09cf5
 +}
 +
 +static int play(void *buf, int samples, int sample_type, uint32_t timestamp, uint64_t playtime) {
-+  (void)sample_type;
 +  (void)timestamp;
 +  (void)playtime;
 +  if (samples < 0 || ((samples > 0) && (buf == NULL)))
@@ -244,20 +271,32 @@ index 0000000..bb09cf5
 +    input += copied_frames * ECHO_CHANNELS;
 +    remaining -= copied_frames;
 +  }
++  int change = 0;
++  if (rc != 0) {
++    close_device(); // The next play reopens the PCM.
++    change = set_output_active(0);
++  } else if (sample_type == play_samples_are_timed) {
++    change = set_output_active(1);
++  }
 +  pthread_mutex_unlock(&echo_mutex);
++  send_output_state(change);
 +  return rc;
 +}
 +
 +static void stop(void) {
 +  pthread_mutex_lock(&echo_mutex);
++  int change = set_output_active(0);
 +  int rc = close_device();
 +  if (rc != 0)
 +    debug(1, "echo: stop failed: %d", rc);
 +  pthread_mutex_unlock(&echo_mutex);
++  send_output_state(change);
 +}
 +
 +static void flush(void) {
 +  pthread_mutex_lock(&echo_mutex);
++  // AirPlay 2 pauses and seeks flush; the next timed frame sends 'obeg' again.
++  int change = set_output_active(0);
 +  echo_pending_frames = 0;
 +  if (echo_device != NULL) {
 +    int rc = echo_alsa_flush(echo_device);
@@ -266,6 +305,7 @@ index 0000000..bb09cf5
 +      debug(1, "echo: flush failed: %d", rc);
 +  }
 +  pthread_mutex_unlock(&echo_mutex);
++  send_output_state(change);
 +}
 +
 +static int delay(long *the_delay) {
