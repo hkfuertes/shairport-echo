@@ -27,8 +27,8 @@ Install the generated ZIP from TWRP on an explicitly selected supported device (
 
 ```sh
 adb reboot recovery
-adb push out/shairport-echo-0.2.1-armv7.zip /tmp/
-adb shell twrp install /tmp/shairport-echo-0.2.1-armv7.zip
+adb push out/shairport-echo-0.2.2-armv7.zip /tmp/
+adb shell twrp install /tmp/shairport-echo-0.2.2-armv7.zip
 adb reboot
 ```
 

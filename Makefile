@@ -1,4 +1,4 @@
-VERSION ?= 0.2.1
+VERSION ?= 0.2.2
 
 .PHONY: all build zip test verify update-speakerd clean
 
