@@ -39,7 +39,7 @@ The AirPlay name defaults to `EchoAir` and the last six hex digits of the MAC; c
 ## Validation status
 
 - `make test` verifies ZIP structure, device gating, fresh install, upgrade, uninstall, both config seeds and preservation, plus the `ledcontroller -> speakerd` link.
-- Biscuit ran the `speakerd` package end to end: fresh TWRP install, cold boot with `speakerd` supervising NQPTP (via `nqptp-service`: entropy, hostname, `/dev/shm`) and Shairport, and AirPlay discovery under a custom name.
+- Biscuit ran 0.3.0 end to end on a wiped `/data`. That covered a fresh TWRP install and a cold boot with `speakerd` supervising NQPTP (via `nqptp-service`: entropy, hostname, `/dev/shm`) and Shairport, plus discovery as `EchoAir <MAC>`. From an iPhone it played audio and handled sender volume, pause/resume/skip and the privacy amp gate. Stopping and restarting `ledcontroller` left no orphaned Shairport, and the uninstall ZIP restored the stock `ledcontroller`.
 - With the previous `echo-volume-control` package, Biscuit exercised AP2 realtime and buffered playback, metadata-driven volume/ring updates, and the physical privacy `0/1` speaker-amp gate.
 - With the previous package, Radar/Radar Puffin exercised a fresh TWRP install, AirPlay discovery and connection from iPhone and Mac alongside Biscuit, plus the `AudioAccessory1,1` advertisement. The dual-device test exposed and then verified the `localhost.local` collision fix.
 - This does **not** establish multi-room timing, pairing persistence across service restarts, or native HomePod stereo pairing.
