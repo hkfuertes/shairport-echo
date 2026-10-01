@@ -1,4 +1,4 @@
-VERSION ?= 0.2.1
+VERSION ?= 0.3.0
 ECHO_LIBS := third_party/echo-libs
 
 .PHONY: all build zip test verify update-speakerd clean
