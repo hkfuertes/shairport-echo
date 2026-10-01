@@ -1,0 +1,3 @@
+[submodule "third_party/echo-libs"]
+	path = third_party/echo-libs
+	url = https://github.com/hkfuertes/echo-libs.git

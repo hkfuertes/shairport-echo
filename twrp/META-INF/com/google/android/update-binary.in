@@ -9,6 +9,7 @@ SYSTEM=${SHAIRPORT_ECHO_SYSTEM:-/system}
 DATA=${SHAIRPORT_ECHO_DATA:-/data}
 TMPROOT=${SHAIRPORT_ECHO_TMPDIR:-/tmp}
 GETPROP=${SHAIRPORT_ECHO_GETPROP:-getprop}
+IDME=${SHAIRPORT_ECHO_IDME:-/proc/idme/mac_addr}
 UNZIP=${SHAIRPORT_ECHO_UNZIP:-unzip}
 CHCON=${SHAIRPORT_ECHO_CHCON:-chcon}
 CHOWN=${SHAIRPORT_ECHO_CHOWN:-chown}
@@ -173,12 +174,14 @@ install_file() {
   mv -f "$temporary" "$destination" || die "could not activate $relative"
 }
 
+# "EchoAir" and the end of the MAC, readable from TWRP too (its getprop reports the recovery's).
 default_name() {
-  name=$("$GETPROP" ro.product.name 2>/dev/null || true)
-  case "$name" in
-    ''|*[!A-Za-z0-9_.\ -]*) name=Echo ;;
-  esac
-  printf '%s\n' "$name"
+  mac=$( (tr -cd '0-9A-Fa-f' <"$IDME" | tr a-f A-F) 2>/dev/null || true)
+  if [ "${#mac}" -eq 12 ]; then
+    printf 'EchoAir %s\n' "${mac#??????}"
+  else
+    printf '%s\n' EchoAir
+  fi
 }
 
 prepare_data_stage() {

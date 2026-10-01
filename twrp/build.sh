@@ -2,7 +2,7 @@
 set -eu
 
 root=$(CDPATH= cd -- "$(dirname "$0")/.." && pwd)
-version=${VERSION:-0.2.1}
+version=${VERSION:-0.3.0}
 image=${TWRP_IMAGE:-shairport-echo-twrp-artifact:local}
 work=$root/target/twrp
 out=$root/out
@@ -33,6 +33,8 @@ render_update_binary() {
   chmod 755 "$destination"
 }
 
+[ -f "$root/third_party/echo-libs/libs/echo-alsa/src/alsa.c" ] ||
+  fail 'missing echo-libs: git submodule update --init (needs GitHub access, the repository is private)'
 rm -rf "$work"
 mkdir -p "$work" "$out"
 docker build --target twrp-artifact -t "$image" "$root"

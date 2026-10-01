@@ -72,13 +72,8 @@ COPY --from=build /out/alsa-open-probe /alsa-open-probe
 COPY config/echo-alsa.conf /echo-alsa.conf
 
 FROM build AS echo-artifacts-check
-COPY libs/libecho_alsa.a /tmp/libecho_alsa.a
-COPY libs/echo_alsa.h /tmp/echo_alsa.h
 COPY --chmod=755 libs/speakerd /tmp/speakerd
-RUN "$AR" t /tmp/libecho_alsa.a | grep -q . \
-    && printf '#include "echo_alsa.h"\nint main(void) { return 0; }\n' >/tmp/check-echo-alsa.c \
-    && "$CC" -I/tmp -c /tmp/check-echo-alsa.c -o /tmp/check-echo-alsa.o \
-    && check-static /tmp/speakerd
+RUN check-static /tmp/speakerd
 
 FROM build AS uuid-build
 RUN curl -fsSL "https://www.kernel.org/pub/linux/utils/util-linux/v${UTIL_LINUX_VERSION%.*}/util-linux-${UTIL_LINUX_VERSION}.tar.xz" -o /tmp/util-linux.tar.xz \
@@ -157,14 +152,14 @@ RUN cd /src/ffmpeg \
     && test -f "$PREFIX/lib/libavcodec.a"
 
 FROM shairport-deps AS shairport-build
-COPY --from=echo-artifacts-check /tmp/libecho_alsa.a /opt/armv7-musl/lib/libecho_alsa.a
-COPY --from=echo-artifacts-check /tmp/echo_alsa.h /opt/armv7-musl/include/echo_alsa.h
 RUN mkdir -p /src/shairport-sync \
     && curl -fsSL "https://github.com/mikebrady/shairport-sync/archive/${SHAIRPORT_SYNC_COMMIT}.tar.gz" -o /tmp/shairport-sync.tar.gz \
     && echo "${SHAIRPORT_SYNC_SHA256}  /tmp/shairport-sync.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/shairport-sync.tar.gz -C /src/shairport-sync --strip-components=1 \
     && rm /tmp/shairport-sync.tar.gz
 COPY patches/shairport-sync /patches/shairport-sync
+# echo-alsa's C source from the pinned echo-libs submodule, compiled into shairport-sync (patch 0003).
+COPY third_party/echo-libs/libs/echo-alsa /src/shairport-sync/echo-alsa
 WORKDIR /src/shairport-sync
 RUN for patch in /patches/shairport-sync/*.patch; do patch -p1 < "$patch"; done \
     && autoreconf -fi \

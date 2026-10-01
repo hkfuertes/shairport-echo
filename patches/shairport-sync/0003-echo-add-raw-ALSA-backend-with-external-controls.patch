@@ -25,8 +25,8 @@ index 96bf0cb..6545bcd 100644
  endif
  
 +if USE_ECHO_ALSA
-+shairport_sync_SOURCES += audio_echo.c
-+shairport_sync_LDADD += -lecho_alsa
++shairport_sync_SOURCES += audio_echo.c echo-alsa/src/alsa.c
++AM_CPPFLAGS = -I$(srcdir)/echo-alsa/include
 +endif
 +
  if USE_JACK
