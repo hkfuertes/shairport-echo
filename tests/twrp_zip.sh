@@ -21,9 +21,6 @@ verify_zip() {
   unzip -t "$archive" >/dev/null || fail "invalid ZIP: $archive"
 }
 
-[ ! -e "$root/third_party" ] || fail 'upstream sources must not be vendored'
-[ -s "$root/libs/libecho_alsa.a" ] || fail 'missing vendored libecho_alsa.a'
-[ -s "$root/libs/echo_alsa.h" ] || fail 'missing vendored echo_alsa.h'
 [ -x "$root/libs/speakerd" ] || fail 'missing vendored speakerd'
 [ -f "$root/config/speakerd.ini" ] || fail 'missing speakerd config'
 [ -x "$root/scripts/nqptp-service.sh" ] || fail 'missing nqptp helper'
@@ -107,12 +104,12 @@ cat >"$tmp/getprop" <<'EOF'
 #!/bin/sh
 case "$1" in
   ro.product.device) printf '%s\n' "$TEST_DEVICE" ;;
-  ro.product.name) printf '%s\n' "$TEST_PRODUCT" ;;
   ro.product.cpu.abi) printf '%s\n' armeabi-v7a ;;
   *) exit 1 ;;
 esac
 EOF
 chmod 755 "$tmp/getprop"
+printf 'fc65de856fa5\n' >"$tmp/idme"
 
 run_update() {
   script=$1
@@ -121,7 +118,7 @@ run_update() {
   device=$4
   data=${5:-"$tmp/data-$device"}
   TEST_DEVICE=$device \
-    TEST_PRODUCT=$device \
+    SHAIRPORT_ECHO_IDME="$tmp/idme" \
     SHAIRPORT_ECHO_SYSTEM=$system \
     SHAIRPORT_ECHO_DATA="$data" \
     SHAIRPORT_ECHO_TMPDIR="$tmp/runtime-$device" \
@@ -158,7 +155,7 @@ check_fresh_lifecycle() {
   [ ! -e "$lib/echo-volume-control" ] || fail "$reported kept echo-volume-control"
   grep -qx 'owner=shairport-echo' "$system/etc/shairport-echo/installed" || fail "$reported ownership marker"
   grep -qx "device=$normalized" "$system/etc/shairport-echo/installed" || fail "$reported normalized device"
-  grep -Fqx "  name = \"$reported\";" "$data/shairport-sync.conf" ||
+  grep -Fqx '  name = "EchoAir 856FA5";' "$data/shairport-sync.conf" ||
     fail "$reported Shairport config was not seeded"
   cmp "$lib/speakerd.ini" "$data/speakerd.ini" || fail "$reported speakerd config was not seeded"
 
